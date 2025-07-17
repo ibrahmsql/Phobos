@@ -1,11 +1,12 @@
 use clap::{Arg, Command, ArgAction};
 use std::process;
+use std::net::{IpAddr, ToSocketAddrs};
 use colored::*;
 use phobos::{
     config::ScanConfig,
     network::{ScanTechnique, stealth::StealthOptions},
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
-    scanner::{engine::ScanEngine, ScanResult},
+    scanner::engine::ScanEngine,
     utils::config::ConfigValidator,
 };
 use anyhow;
@@ -27,6 +28,33 @@ fn print_banner() {
     println!();
     println!("{}", "\"Let your ports tremble.\"".truecolor(231, 76, 60).bold());
     println!();
+}
+
+fn resolve_target(target: &str) -> anyhow::Result<String> {
+    // Check if it's already an IP address
+    if target.parse::<IpAddr>().is_ok() {
+        return Ok(target.to_string());
+    }
+    
+    // Try to resolve hostname
+    let socket_addr = format!("{}:80", target);
+    match socket_addr.to_socket_addrs() {
+        Ok(mut addrs) => {
+            if let Some(addr) = addrs.next() {
+                println!("{} {} {} {}", 
+                    "[~] Resolving".bright_yellow(),
+                    target.bright_white().bold(),
+                    "to".bright_yellow(),
+                    addr.ip().to_string().bright_cyan().bold());
+                Ok(addr.ip().to_string())
+            } else {
+                Err(anyhow::anyhow!("No IP addresses found for hostname: {}", target))
+            }
+        }
+        Err(_) => {
+            Err(anyhow::anyhow!("Failed to resolve hostname: {}", target))
+        }
+    }
 }
 
 #[tokio::main]
@@ -228,7 +256,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _config = ScanConfig::default();
 
     // Parse arguments and override config
-    let target = matches.get_one::<String>("target").unwrap();
+    let target_input = matches.get_one::<String>("target").unwrap();
+    
+    // Resolve hostname to IP if needed
+    let target = resolve_target(target_input)?;
     let ports = matches.get_one::<String>("ports").unwrap();
     let technique_str = matches.get_one::<String>("technique").unwrap();
     let timing_level = matches.get_one::<String>("timing").unwrap().parse::<u8>().unwrap_or(3);
@@ -485,7 +516,7 @@ fn parse_ports(port_spec: &str) -> anyhow::Result<Vec<u16>> {
     Ok(ports)
 }
 
-fn display_summary(results: &[phobos::scanner::ScanResult], target: &str) {
+fn _display_summary(results: &[phobos::scanner::ScanResult], target: &str) {
     let mut total_open = 0;
     let mut total_closed = 0;
     let mut total_filtered = 0;

@@ -4,9 +4,8 @@ pub mod engine;
 pub mod techniques;
 
 use crate::config::ScanConfig;
-use crate::network::{PortResult, PortState, Protocol};
+use crate::network::{PortResult, PortState};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::time::{Duration, Instant};
 

@@ -3,7 +3,6 @@
 //! This module provides comprehensive error handling with graceful degradation
 //! and retry mechanisms for robust scanning operations.
 
-use std::fmt;
 use thiserror::Error;
 
 /// Main error type for scanning operations

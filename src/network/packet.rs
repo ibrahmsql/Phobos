@@ -4,9 +4,9 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::{Ipv4Packet, MutableIpv4Packet};
 use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpPacket};
 use pnet::packet::udp::{MutableUdpPacket, UdpPacket};
-use pnet::packet::{MutablePacket, Packet};
+use pnet::packet::Packet;
 use rand::Rng;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 
 /// TCP packet builder for crafting custom TCP packets
 pub struct TcpPacketBuilder {

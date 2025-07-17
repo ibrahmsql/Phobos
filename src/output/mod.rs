@@ -6,7 +6,6 @@ use crate::network::{PortState, Protocol};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::Path;
 use chrono::{DateTime, Utc};
 
 /// Output format options

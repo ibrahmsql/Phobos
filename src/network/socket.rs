@@ -11,7 +11,7 @@ use tokio::net::UdpSocket;
 /// Raw socket wrapper for sending crafted packets
 pub struct RawSocket {
     socket: Socket,
-    protocol: Protocol,
+    _protocol: Protocol,
 }
 
 impl RawSocket {
@@ -31,7 +31,7 @@ impl RawSocket {
         
         Ok(Self {
             socket,
-            protocol: Protocol::TCP,
+            _protocol: Protocol::TCP,
         })
     }
     
@@ -50,7 +50,7 @@ impl RawSocket {
         
         Ok(Self {
             socket,
-            protocol: Protocol::UDP,
+            _protocol: Protocol::UDP,
         })
     }
     
@@ -69,7 +69,7 @@ impl RawSocket {
         
         Ok(Self {
             socket,
-            protocol: Protocol::ICMPV4,
+            _protocol: Protocol::ICMPV4,
         })
     }
     

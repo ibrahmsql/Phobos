@@ -72,7 +72,7 @@ impl StealthOptions {
     }
     
     /// Apply stealth options to a TCP packet builder
-    pub fn apply_to_tcp_packet(&self, builder: &mut TcpPacketBuilder) {
+    pub fn apply_to_tcp_packet(&self, _builder: &mut TcpPacketBuilder) {
         // Note: Source port and sequence randomization would need to be implemented
         // in TcpPacketBuilder or handled differently
         // if self.randomize_source_port {
@@ -96,7 +96,7 @@ impl StealthOptions {
     }
     
     /// Generate random sequence number
-    fn random_sequence() -> u32 {
+    fn _random_sequence() -> u32 {
         let mut rng = rand::thread_rng();
         rng.gen()
     }

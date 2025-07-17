@@ -4,11 +4,10 @@ use crate::config::ScanConfig;
 use crate::network::{
     packet::{PacketParser, TcpPacketBuilder, TcpResponse, UdpPacketBuilder},
     protocol::{NetworkUtils, RateLimiter, ResponseAnalyzer, ServiceDatabase},
-    socket::{RawSocket, SocketPool, TcpConnectScanner, UdpScanner},
+    socket::{SocketPool, TcpConnectScanner, UdpScanner},
     PortResult, PortState, Protocol, ScanTechnique,
 };
-use crate::scanner::{create_batches, ResultCollector, ScanBatch, ScanProgress, ScanResult, ScanStats};
-use std::collections::HashMap;
+use crate::scanner::{create_batches, ScanBatch, ScanProgress, ScanResult, ScanStats};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -103,7 +102,6 @@ impl ScanEngine {
     async fn scan_single_host(&self, target_ip: Ipv4Addr) -> crate::Result<ScanResult> {
         let start_time = Instant::now();
         let mut result = ScanResult::new(target_ip.to_string(), self.config.clone());
-        let mut stats = ScanStats::new();
         
         // Create batches for parallel processing
         let batch_size = self.config.batch_size();
@@ -186,7 +184,7 @@ impl ScanEngine {
         }
         
         // Get final statistics
-        stats = stats_handle.await.unwrap();
+        let stats = stats_handle.await.unwrap();
         
         // Collect all results
         let port_results = {
@@ -408,9 +406,9 @@ impl ScanEngine {
     /// Wait for UDP response or ICMP unreachable
     async fn wait_for_udp_response(
         &self,
-        socket_pool: &SocketPool,
-        target: Ipv4Addr,
-        port: u16,
+        _socket_pool: &SocketPool,
+        _target: Ipv4Addr,
+        _port: u16,
     ) -> (Option<crate::network::packet::UdpResponse>, bool) {
         let timeout_duration = self.config.timeout_duration();
         
@@ -432,8 +430,8 @@ impl ScanEngine {
         Self {
             config: self.config.clone(),
             socket_pool: None, // Would need proper sharing
-            tcp_scanner: self.tcp_scanner.as_ref().map(|s| TcpConnectScanner::new(self.config.timeout_duration())),
-            udp_scanner: self.udp_scanner.as_ref().map(|s| UdpScanner::new(self.config.timeout_duration())),
+            tcp_scanner: self.tcp_scanner.as_ref().map(|_s| TcpConnectScanner::new(self.config.timeout_duration())),
+            udp_scanner: self.udp_scanner.as_ref().map(|_s| UdpScanner::new(self.config.timeout_duration())),
             rate_limiter: self.rate_limiter.clone(),
             service_db: ServiceDatabase::new(),
             response_analyzer: ResponseAnalyzer::new(self.config.technique),
