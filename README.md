@@ -288,9 +288,3 @@ Phobos is licensed under the [MIT License](LICENSE). See LICENSE file for detail
 *Made with ❤️ and ⚡ by the Phobos team*
 
 </div>
-
----
-
-## 🔍 SEO Keywords
-
-**Port Scanner**, **Network Scanner**, **Rust Port Scanner**, **Fast Port Scanner**, **Nmap Alternative**, **Masscan Alternative**, **Network Security Tools**, **Penetration Testing Tools**, **Cybersecurity Tools**, **Network Reconnaissance**, **TCP Scanner**, **UDP Scanner**, **SYN Scanner**, **Stealth Scanner**, **Network Discovery**, **Service Detection**, **Vulnerability Scanner**, **Security Auditing**, **Network Monitoring**, **Open Source Security Tools**
