@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["ibrahimsql"]
 description = "Phobos: The Blazingly Fast Rust-Based Port Scanner That Outspeeds Nmap & Masscan"
 license = "MIT"
+repository = "https://github.com/ibrahmsql/phobos"
+homepage = "https://github.com/ibrahmsql/phobos"
+keywords = ["port-scanner", "network", "security", "rust", "nmap"]
+categories = ["network-programming", "command-line-utilities"]
+readme = "README.md"
+publish = ["github-packages"]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -50,3 +56,6 @@ strip = true
 
 [profile.dev]
 opt-level = 1
+
+[registry]
+default = "github-packages"
