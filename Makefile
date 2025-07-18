@@ -24,6 +24,13 @@ help:
 	@echo "  make dev       - Development build with watch"
 	@echo "  make setup     - Setup development environment"
 	@echo ""
+	@echo "🍺 Homebrew Commands:"
+	@echo "  make homebrew-audit - Audit Homebrew formula"
+	@echo "  make homebrew-test  - Test Homebrew installation"
+	@echo "  make homebrew-uninstall - Uninstall via Homebrew"
+	@echo "  make homebrew-clean - Clean Homebrew cache"
+	@echo "  make package        - Create distribution package"
+	@echo ""
 	@echo "🚀 Usage Commands:"
 	@echo "  make run TARGET=<target> PORTS=<ports> - Run Phobos"
 	@echo "  make example   - Run example scan"
@@ -183,6 +190,34 @@ version:
 	@echo "Phobos: $(shell cargo pkgid | cut -d# -f2)"
 	@echo "Rust: $(shell rustc --version)"
 	@echo "Cargo: $(shell cargo --version)"
+
+# Homebrew related commands
+homebrew-audit:
+	@echo "🍺 Running Homebrew formula audit..."
+	@./scripts/homebrew_audit.sh
+
+homebrew-test:
+	@echo "🧪 Testing Homebrew formula..."
+	@brew install --build-from-source --verbose ./phobos.rb
+
+homebrew-uninstall:
+	@echo "🗑️  Uninstalling Homebrew formula..."
+	@brew uninstall phobos || true
+
+homebrew-clean:
+	@echo "🧹 Cleaning Homebrew cache..."
+	@brew cleanup phobos || true
+
+# Package for distribution
+package:
+	@echo "📦 Creating distribution package..."
+	@mkdir -p dist
+	@tar -czf dist/phobos-$(shell cargo pkgid | cut -d# -f2).tar.gz \
+		--exclude=target \
+		--exclude=dist \
+		--exclude=.git \
+		.
+	@echo "✅ Package created: dist/phobos-$(shell cargo pkgid | cut -d# -f2).tar.gz"
 
 # All-in-one commands
 all: clean build test
