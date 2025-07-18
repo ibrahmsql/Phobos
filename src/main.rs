@@ -1,6 +1,7 @@
 use clap::{Arg, Command, ArgAction};
 use std::process;
 use std::net::{IpAddr, ToSocketAddrs};
+
 use colored::*;
 use phobos::{
     config::ScanConfig,
@@ -8,9 +9,37 @@ use phobos::{
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
     utils::config::ConfigValidator,
+    benchmark::{Benchmark, NamedTimer},
+    top_ports::get_top_1000_ports,
 };
 use anyhow;
 use chrono;
+
+
+
+// Ulimit adjustment for Unix systems
+#[cfg(unix)]
+fn adjust_ulimit_size(ulimit: Option<u64>) -> u64 {
+    use rlimit::Resource;
+    
+    if let Some(limit) = ulimit {
+        if Resource::NOFILE.set(limit, limit).is_ok() {
+            println!("{} {}", 
+                "[~] Automatically increasing ulimit value to".bright_blue(),
+                limit.to_string().bright_cyan().bold());
+        } else {
+            eprintln!("{}", "[!] ERROR: Failed to set ulimit value.".bright_red());
+        }
+    }
+    
+    let (soft, _) = Resource::NOFILE.get().unwrap();
+    soft
+}
+
+#[cfg(not(unix))]
+fn adjust_ulimit_size(_ulimit: Option<u64>) -> u64 {
+    8000 // Default for non-Unix systems
+}
 
 fn print_banner() {
     println!("{}", "____  _   _   ___   ____   ___   ____   _____ ".truecolor(231, 76, 60).bold());
@@ -22,7 +51,7 @@ fn print_banner() {
     println!("{}", "Phobos – The God of Fear. Forged in Rust ⚡".truecolor(255, 215, 0).bold());
     println!();
     println!("{}", "------------------------------------------------------".bright_blue());
-    println!("{}", ": 🔗 https://github.com/ibrahmsql/phobos               :".bright_blue());
+    println!("{}", ": 🔗 `https://github.com/ibrahmsql/phobos`                :".bright_blue());
     println!("{}", ": ⚡ written in Rust | faster than the old gods        :".bright_blue());
     println!("{}", "------------------------------------------------------".bright_blue());
     println!();
@@ -42,9 +71,9 @@ fn resolve_target(target: &str) -> anyhow::Result<String> {
         Ok(mut addrs) => {
             if let Some(addr) = addrs.next() {
                 println!("{} {} {} {}", 
-                    "[~] Resolving".bright_yellow(),
-                    target.bright_white().bold(),
-                    "to".bright_yellow(),
+                    "[~] Resolving".bright_blue(),
+                    target.bright_yellow(),
+                    "to".bright_blue(),
                     addr.ip().to_string().bright_cyan().bold());
                 Ok(addr.ip().to_string())
             } else {
@@ -61,9 +90,12 @@ fn resolve_target(target: &str) -> anyhow::Result<String> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     
-    // Print banner
-    print_banner();
+    // Initialize benchmark system
+    let mut benchmark = Benchmark::init();
+    let mut total_timer = NamedTimer::start("Total Scan");
+    let mut phobos_bench = NamedTimer::start("Phobos");
     
+    // Parse command line arguments first to check for greppable mode
     let matches = Command::new("phobos")
         .version("1.0.0")
         .author("ibrahimsql")
@@ -74,6 +106,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Target to scan (IP, hostname, or CIDR)")
                 .required(true)
                 .index(1),
+        )
+        .arg(
+            Arg::new("greppable")
+                .short('g')
+                .long("greppable")
+                .help("Greppable output. Only show IP:PORT format")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("ulimit")
+                .short('u')
+                .long("ulimit")
+                .value_name("LIMIT")
+                .help("Automatically increase ulimit to this value")
+                .value_parser(clap::value_parser!(u64)),
+        )
+        .arg(
+            Arg::new("benchmark")
+                .long("benchmark")
+                .help("Show detailed benchmark information")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("accessible")
+                .long("accessible")
+                .help("Accessible mode. Turns off features which negatively affect screen readers")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-banner")
+                .long("no-banner")
+                .help("Hide the banner")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("exclude-ports")
+                .short('x')
+                .long("exclude-ports")
+                .help("A list of comma separated ports to be excluded from scanning")
+                .value_name("PORTS")
+                .value_delimiter(','),
+        )
+        .arg(
+            Arg::new("top")
+                .long("top")
+                .help("Use the top 1000 ports")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("udp")
+                .long("udp")
+                .help("UDP scanning mode")
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new("ports")
@@ -125,68 +210,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_parser(clap::value_parser!(u64))
                 .default_value("1000000"),
         )
-        // Stealth options
         .arg(
-            Arg::new("stealth")
-                .long("stealth")
-                .help("Enable stealth mode")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("fragment")
-                .short('f')
-                .long("fragment")
-                .help("Fragment packets")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("decoys")
-                .short('D')
-                .long("decoys")
-                .value_name("DECOY_LIST")
-                .help("Use decoy addresses (e.g., 192.168.1.1,192.168.1.2,ME)"),
-        )
-        .arg(
-            Arg::new("source-ip")
-                .short('S')
-                .long("source-ip")
-                .value_name("IP")
-                .help("Spoof source IP address"),
-        )
-        .arg(
-            Arg::new("source-port")
-                .short('g')
-                .long("source-port")
-                .value_name("PORT")
-                .help("Use specific source port"),
-        )
-        .arg(
-            Arg::new("data-length")
-                .long("data-length")
-                .value_name("BYTES")
-                .help("Append random data to packets"),
-        )
-        .arg(
-            Arg::new("mtu")
-                .long("mtu")
+            Arg::new("batch-size")
+                .short('b')
+                .long("batch-size")
                 .value_name("SIZE")
-                .help("Set custom MTU size for fragmentation"),
-        )
-        // Output options
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output file"),
-        )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .value_name("FORMAT")
-                .help("Output format")
-                .value_parser(["text", "json", "xml", "csv", "nmap"])
-                .default_value("text"),
+                .help("Batch size for port scanning")
+                .value_parser(clap::value_parser!(usize)),
         )
         .arg(
             Arg::new("verbose")
@@ -202,65 +232,73 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("show-closed")
-                .long("show-closed")
-                .help("Show closed ports")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("show-filtered")
-                .long("show-filtered")
-                .help("Show filtered ports")
-                .action(ArgAction::SetTrue),
-        )
-        // Advanced options
-        .arg(
-            Arg::new("top-ports")
-                .long("top-ports")
-                .value_name("COUNT")
-                .help("Scan top N most common ports"),
-        )
-        .arg(
-            Arg::new("config")
-                .short('c')
-                .long("config")
-                .value_name("FILE")
-                .help("Configuration file"),
-        )
-        .arg(
-            Arg::new("legal-warning")
-                .long("legal-warning")
-                .help("Show legal warning")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("ports-only")
                 .long("ports-only")
                 .help("Only scan ports, don't run Nmap scripts")
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("nmap-args")
-                .long("nmap-args")
-                .value_name("ARGS")
-                .help("Additional Nmap arguments for service detection"),
-        )
         .get_matches();
-
-    // Show legal warning if requested
-    if matches.get_flag("legal-warning") {
-        show_legal_warning();
+    
+    let greppable = matches.get_flag("greppable");
+    let accessible = matches.get_flag("accessible");
+    let no_banner = matches.get_flag("no-banner");
+    let top_ports = matches.get_flag("top");
+    let _udp_mode = matches.get_flag("udp");
+    let exclude_ports: Option<Vec<String>> = matches.get_many::<String>("exclude-ports")
+        .map(|vals| vals.map(|s| s.to_string()).collect());
+    
+    // Show banner unless disabled
+    if !no_banner && !greppable && !accessible {
+        print_banner();
     }
 
-    // Load configuration (simplified)
-    let _config = ScanConfig::default();
+    // Adjust ulimit if specified
+    if let Some(ulimit) = matches.get_one::<u64>("ulimit") {
+        adjust_ulimit_size(Some(*ulimit));
+    }
+    
+
+
+    // Legal warning is shown by default in stealth mode
+
+    // Load configuration from file or use default
+    let base_config = if let Some(config_file) = matches.get_one::<String>("config") {
+        match ScanConfig::from_toml_file(config_file) {
+            Ok(config) => {
+                println!("[~] Loaded config from {}", config_file);
+                config
+            }
+            Err(e) => {
+                eprintln!("Failed to load config file: {}", e);
+                process::exit(1);
+            }
+        }
+    } else {
+        // Try to load default config files
+        ScanConfig::load_default_config()
+    };
 
     // Parse arguments and override config
     let target_input = matches.get_one::<String>("target").unwrap();
     
     // Resolve hostname to IP if needed
     let target = resolve_target(target_input)?;
-    let ports = matches.get_one::<String>("ports").unwrap();
+    
+    // Parse ports
+    let mut ports = if top_ports {
+        get_top_1000_ports()
+    } else {
+        let port_spec = matches.get_one::<String>("ports").unwrap();
+        parse_ports(port_spec)?
+    };
+    
+    // Exclude ports if specified
+    if let Some(exclude_list) = exclude_ports {
+        let exclude_ports: Vec<u16> = exclude_list.iter()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        ports.retain(|&port| !exclude_ports.contains(&port));
+    }
     let technique_str = matches.get_one::<String>("technique").unwrap();
     let timing_level = matches.get_one::<String>("timing").unwrap().parse::<u8>().unwrap_or(3);
     let threads = *matches.get_one::<usize>("threads").unwrap();
@@ -284,54 +322,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Parse stealth options
-    let stealth_options = StealthOptions {
-        fragment_packets: matches.get_flag("fragment") || matches.get_flag("stealth"),
-        randomize_source_port: matches.get_flag("stealth"),
-        spoof_source_ip: matches.get_one::<String>("source-ip")
-            .and_then(|ip| ip.parse().ok()),
-        decoy_addresses: parse_decoys(matches.get_one::<String>("decoys")),
-        timing_randomization: matches.get_flag("stealth"),
-        packet_padding: matches.get_one::<String>("data-length")
-            .and_then(|s| s.parse().ok()),
-        custom_mtu: matches.get_one::<String>("mtu")
-            .and_then(|s| s.parse().ok()),
-        randomize_ip_id: matches.get_flag("stealth"),
-        randomize_sequence: matches.get_flag("stealth"),
-        use_bad_checksum: false,
-    };
+    let stealth_options = StealthOptions::default();
 
     // Parse output configuration
-    let output_format = match matches.get_one::<String>("format").unwrap().as_str() {
-        "json" => OutputFormat::Json,
-        "xml" => OutputFormat::Xml,
-        "csv" => OutputFormat::Csv,
-        "nmap" => OutputFormat::Nmap,
-        _ => OutputFormat::Text,
-    };
-
     let output_config = OutputConfig {
-        format: output_format,
-        file: matches.get_one::<String>("output").cloned(),
+        format: OutputFormat::Text,
+        file: None,
         colored: !matches.get_flag("no-color"),
         verbose: matches.get_flag("verbose"),
-        show_closed: matches.get_flag("show-closed"),
-        show_filtered: matches.get_flag("show-filtered"),
-
+        show_closed: false,
+        show_filtered: false,
     };
 
-    // Create scan configuration
+    // Create scan configuration by merging base config with CLI args
     let scan_config = ScanConfig {
         target: target.clone(),
-        ports: parse_ports(ports)?,
+        ports,
         technique,
         threads,
         timeout,
         rate_limit,
         stealth_options: Some(stealth_options),
         timing_template: timing_level,
-        top_ports: matches.get_one::<String>("top-ports")
-            .and_then(|s| s.parse().ok()),
+        top_ports: None,
+        batch_size: matches.get_one::<usize>("batch-size").copied().or(base_config.batch_size), // CLI overrides config file
+        realtime_notifications: base_config.realtime_notifications,
+        notification_color: base_config.notification_color,
     };
+    
+    // Show batch size info like RustScan with colors
+    let calculated_batch = scan_config.batch_size();
+    println!("{} File limit higher than batch size. Can increase speed by increasing batch size {}.", 
+        "[~]".bright_blue(),
+        format!("'-b {}'", calculated_batch * 2).bright_green().bold()
+    );
+    
+    if calculated_batch > 1000 {
+        println!("[!] High batch size detected ({}). Consider lowering it if you experience issues.", calculated_batch);
+    }
 
     // Validate configuration
     let validation_errors = ConfigValidator::validate_scan_config(&scan_config);
@@ -352,25 +380,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and run scanner
     let engine = ScanEngine::new(scan_config.clone()).await?;
     
-    println!("{} {}", "Starting Phobos".bright_green(), "v1.0.0".bright_green().bold());
-    println!("{} {}", "Target:".bright_yellow(), target.bright_white().bold());
-    println!("{} {} {}", "Ports:".bright_yellow(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
-    println!("{} {:?}", "Technique:".bright_yellow(), technique);
-    println!("{} {}", "Threads:".bright_yellow(), threads.to_string().bright_white().bold());
+    println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.0.0".bright_green().bold());
+    println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
+    println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
+    println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());
+    println!("{} {}", "Threads:".bright_yellow().bold(), threads.to_string().bright_white().bold());
     println!();
     
     match engine.scan().await {
         Ok(results) => {
             progress.finish();
             
-            // Show open ports found
+            // Show open ports found with enhanced colors
             let open_ports: Vec<u16> = results.port_results.iter()
                 .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
                 .map(|pr| pr.port)
                 .collect();
             
             for port in &open_ports {
-                println!("{} {}:{}", "Open".bright_green().bold(), target.bright_white(), port.to_string().bright_cyan());
+                let service = results.port_results.iter()
+                    .find(|pr| pr.port == *port)
+                    .and_then(|pr| pr.service.as_deref())
+                    .unwrap_or("unknown");
+                println!("{} {}:{} ({})", 
+                    "OPEN:".bright_green().bold(),
+                    target.bright_cyan(),
+                    port.to_string().bright_white().bold(),
+                    service.bright_yellow()
+                );
+            }
+            
+            println!();
+            
+            // Show open ports in RustScan format
+            if !open_ports.is_empty() {
+                let ports_str = open_ports.iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("{} {}", 
+                    "Open".bright_green().bold(),
+                    format!("{}:[{}]", target.bright_cyan(), ports_str.bright_white().bold())
+                );
             }
             
             if let Err(e) = output_manager.write_results(&results) {
@@ -379,9 +430,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             // Summary is already displayed by output manager
             
+            // Show greppable output if enabled
+            if matches.get_flag("greppable") {
+                for port in &open_ports {
+                    println!("{}:{}", target, port);
+                }
+            }
+            
             // Run Nmap if not ports-only mode and open ports found
             if !matches.get_flag("ports-only") && !open_ports.is_empty() {
-                println!("{}", "[~] Starting Script(s)".bright_yellow().bold());
+                println!("{} {}", "[~]".bright_blue(), "Starting Script(s)".bright_yellow().bold());
                 run_nmap_scan(&target, &open_ports, matches.get_one::<String>("nmap-args"));
             }
         }
@@ -390,6 +448,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             process::exit(1);
         }
     }
+    
+    // Stop total scan timer and show benchmark if enabled
+    total_timer.stop();
+    phobos_bench.stop();
+    benchmark.add_timer(total_timer);
+    benchmark.add_timer(phobos_bench);
+    
+    // Benchmark summary removed as requested
     
     Ok(())
 }
@@ -437,46 +503,9 @@ fn run_nmap_scan(target: &str, open_ports: &[u16], nmap_args: Option<&String>) {
     }
 }
 
-fn show_legal_warning() {
-    println!("⚠️  Legal Notice:");
-    println!("This tool should only be used on systems you own or have permission to test.");
-    println!("Unauthorized port scanning may be illegal in your jurisdiction.");
-    print!("Continue? (y/N): ");
-    
-    use std::io::{self, Write};
-    io::stdout().flush().unwrap();
-    
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    
-    if !input.trim().to_lowercase().starts_with('y') {
-        println!("Scan cancelled.");
-        process::exit(0);
-    }
-    println!();
-}
 
-fn parse_decoys(decoys_str: Option<&String>) -> Vec<std::net::IpAddr> {
-    let mut decoys = Vec::new();
-    
-    if let Some(decoys_str) = decoys_str {
-        for decoy in decoys_str.split(',') {
-            if decoy.trim() == "ME" {
-                // Skip "ME" - will be handled by stealth module
-                continue;
-            }
-            if decoy.starts_with("RND:") {
-                // Random decoys - will be handled by stealth module
-                continue;
-            }
-            if let Ok(ip) = decoy.trim().parse() {
-                decoys.push(ip);
-            }
-        }
-    }
-    
-    decoys
-}
+
+
 
 fn parse_ports(port_spec: &str) -> anyhow::Result<Vec<u16>> {
     let mut ports = Vec::new();

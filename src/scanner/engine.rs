@@ -227,6 +227,19 @@ impl ScanEngine {
             // Scan the port
             let port_result = self.scan_port(batch.target, port).await?;
             
+            // Real-time open port notification - INSTANT FEEDBACK!
+            if port_result.state == PortState::Open {
+                let service_info = if let Some(ref service) = port_result.service {
+                    format!(" ({})", service)
+                } else {
+                    String::new()
+                };
+                
+                // Use orange color for instant notifications (\x1b[38;5;208m = orange)
+                println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", 
+                    batch.target, port, service_info);
+            }
+            
             // Update statistics
             stats.packets_sent += 1;
             if port_result.state == PortState::Open {
@@ -423,15 +436,35 @@ impl ScanEngine {
         }
     }
     
-    /// Clone engine for task spawning (simplified version)
+    /// Clone engine for task spawning
     fn clone_for_task(&self) -> Self {
-        // This is a simplified clone - in a real implementation,
-        // you'd want to share the socket pool and other resources
+        let technique = self.config.technique;
+        let timeout_duration = self.config.timeout_duration();
+        
+        // Initialize components based on scan technique
+        let (socket_pool, tcp_scanner, udp_scanner) = if technique.requires_raw_socket() {
+            // For raw socket techniques, create a new socket pool
+            let pool = SocketPool::new(10, 5).ok(); // 10 TCP, 5 UDP sockets
+            (pool, None, None)
+        } else {
+            let tcp_scanner = if technique.is_tcp() {
+                Some(TcpConnectScanner::new(timeout_duration))
+            } else {
+                None
+            };
+            let udp_scanner = if technique == ScanTechnique::Udp {
+                Some(UdpScanner::new(timeout_duration))
+            } else {
+                None
+            };
+            (None, tcp_scanner, udp_scanner)
+        };
+        
         Self {
             config: self.config.clone(),
-            socket_pool: None, // Would need proper sharing
-            tcp_scanner: self.tcp_scanner.as_ref().map(|_s| TcpConnectScanner::new(self.config.timeout_duration())),
-            udp_scanner: self.udp_scanner.as_ref().map(|_s| UdpScanner::new(self.config.timeout_duration())),
+            socket_pool,
+            tcp_scanner,
+            udp_scanner,
             rate_limiter: self.rate_limiter.clone(),
             service_db: ServiceDatabase::new(),
             response_analyzer: ResponseAnalyzer::new(self.config.technique),
