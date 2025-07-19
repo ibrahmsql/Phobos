@@ -426,7 +426,7 @@ fn benchmark_large_scan(c: &mut Criterion) {
 fn benchmark_network_scan(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let mut group = c.benchmark_group("network_scan");
-    group.sample_size(5);
+    group.sample_size(10);
     group.measurement_time(Duration::from_secs(20));
     
     group.bench_function("scan_common_ports", |b| {
