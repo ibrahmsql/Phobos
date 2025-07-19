@@ -175,7 +175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("TYPE")
                 .help("Scan technique")
                 .value_parser(["syn", "connect", "udp", "fin", "null", "xmas", "ack", "window"])
-                .default_value("syn"),
+                .default_value("connect"),
         )
         .arg(
             Arg::new("timing")
@@ -192,7 +192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("COUNT")
                 .help("Number of concurrent threads")
                 .value_parser(clap::value_parser!(usize))
-                .default_value("1000"),
+                .default_value("4500"), // High concurrent connection count
         )
         .arg(
             Arg::new("timeout")
@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("MS")
                 .help("Timeout in milliseconds")
                 .value_parser(clap::value_parser!(u64))
-                .default_value("1000"),
+                .default_value("300"), // Aggressive timeout for fast scanning
         )
         .arg(
             Arg::new("rate-limit")
@@ -208,7 +208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("PPS")
                 .help("Rate limit in packets per second")
                 .value_parser(clap::value_parser!(u64))
-                .default_value("1000000"),
+                .default_value("10000000"), // 10M PPS - Ultra-fast scanning rate
         )
         .arg(
             Arg::new("batch-size")
@@ -348,9 +348,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         batch_size: matches.get_one::<usize>("batch-size").copied().or(base_config.batch_size), // CLI overrides config file
         realtime_notifications: base_config.realtime_notifications,
         notification_color: base_config.notification_color,
+        adaptive_learning: base_config.adaptive_learning,
+        min_response_time: base_config.min_response_time,
+        max_response_time: base_config.max_response_time,
     };
     
-    // Show batch size info like RustScan with colors
+    // Show batch size info with colors
     let calculated_batch = scan_config.batch_size();
     println!("{} File limit higher than batch size. Can increase speed by increasing batch size {}.", 
         "[~]".bright_blue(),
@@ -412,7 +415,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             println!();
             
-            // Show open ports in RustScan format
+            // Show open ports in clean format
             if !open_ports.is_empty() {
                 let ports_str = open_ports.iter()
                     .map(|p| p.to_string())

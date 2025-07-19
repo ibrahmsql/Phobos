@@ -6,6 +6,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 /// Common service ports mapping
+#[derive(Clone)]
 pub struct ServiceDatabase {
     tcp_services: HashMap<u16, &'static str>,
     udp_services: HashMap<u16, &'static str>,

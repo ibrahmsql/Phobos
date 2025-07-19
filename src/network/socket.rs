@@ -125,24 +125,92 @@ impl RawSocket {
     }
 }
 
-/// TCP connect scanner for non-raw socket scanning
+/// TCP connect scanner for non-raw socket scanning 
 pub struct TcpConnectScanner {
     timeout: Duration,
+    /// Connection pool for reusing sockets
+    connection_pool: std::sync::Arc<tokio::sync::Mutex<Vec<tokio::net::TcpStream>>>,
+    /// Adaptive timeout based on network conditions
+    adaptive_timeout: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl TcpConnectScanner {
     pub fn new(timeout: Duration) -> Self {
-        Self { timeout }
+        Self { 
+            timeout,
+            connection_pool: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            adaptive_timeout: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(timeout.as_millis() as u64)),
+        }
     }
     
     /// Perform a TCP connect scan on a single port
     pub async fn scan_port(&self, target: IpAddr, port: u16) -> crate::Result<bool> {
         let addr = SocketAddr::new(target, port);
         
-        match tokio::time::timeout(self.timeout, tokio::net::TcpStream::connect(addr)).await {
-            Ok(Ok(_stream)) => Ok(true),  // Connection successful - port is open
-            Ok(Err(_)) => Ok(false),      // Connection failed - port is closed
-            Err(_) => Ok(false),          // Timeout - consider port closed/filtered
+        // Use adaptive timeout
+        let current_timeout = Duration::from_millis(
+            self.adaptive_timeout.load(std::sync::atomic::Ordering::Relaxed)
+        );
+        
+        let start_time = std::time::Instant::now();
+        
+        // Fast connection attempt with optimized performance
+        let result = match tokio::time::timeout(current_timeout, tokio::net::TcpStream::connect(addr)).await {
+            Ok(Ok(stream)) => {
+                // Connection successful - close quickly
+                drop(stream);
+                true
+            },
+            Ok(Err(_)) => false,      // Connection failed - port is closed
+            Err(_) => false,          // Timeout - consider port closed/filtered
+        };
+        
+        // Adaptive learning - adjust timeout based on response time
+        let response_time = start_time.elapsed().as_millis() as u64;
+        if result && response_time < 50 {
+            // Very fast response - decrease timeout
+            let new_timeout = std::cmp::max(current_timeout.as_millis() as u64 - 10, 50);
+            self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
+        } else if !result && response_time >= current_timeout.as_millis() as u64 {
+            // Timeout occurred - increase timeout
+            let new_timeout = std::cmp::min(current_timeout.as_millis() as u64 + 50, 3000);
+            self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
+        }
+        
+        Ok(result)
+    }
+    
+    /// High-performance batch port scanning
+    pub async fn scan_ports_batch(&self, target: IpAddr, ports: &[u16]) -> crate::Result<Vec<(u16, bool)>> {
+        let mut tasks = Vec::new();
+        
+        for &port in ports {
+            let scanner = self.clone();
+            let task = tokio::spawn(async move {
+                let result = scanner.scan_port(target, port).await.unwrap_or(false);
+                (port, result)
+            });
+            tasks.push(task);
+        }
+        
+        let mut results = Vec::new();
+        for task in tasks {
+            if let Ok(result) = task.await {
+                results.push(result);
+            }
+        }
+        
+        Ok(results)
+    }
+}
+
+// Clone trait for TcpConnectScanner
+impl Clone for TcpConnectScanner {
+    fn clone(&self) -> Self {
+        Self {
+            timeout: self.timeout,
+            connection_pool: self.connection_pool.clone(),
+            adaptive_timeout: self.adaptive_timeout.clone(),
         }
     }
 }

@@ -33,10 +33,40 @@ impl ScanEngine {
         let technique = config.technique;
         let timeout_duration = config.timeout_duration();
         
-        // Initialize components based on scan technique
+        // Initialize components with automatic fallback for Linux compatibility
         let (socket_pool, tcp_scanner, udp_scanner) = if technique.requires_raw_socket() {
-            let pool = SocketPool::new(10, 5)?; // 10 TCP, 5 UDP sockets
-            (Some(pool), None, None)
+            // Try to create raw socket pool, fallback to TCP Connect if failed
+            match SocketPool::new(50, 25) {
+                Ok(pool) => {
+                    log::info!("Raw socket pool initialized successfully");
+                    (Some(pool), None, None)
+                }
+                Err(e) => {
+                    log::warn!("Raw socket initialization failed: {}. Falling back to TCP Connect scan.", e);
+                    
+                    if cfg!(target_os = "linux") {
+                        eprintln!("\x1b[33m⚠️  Raw socket access failed on Linux\x1b[0m");
+                        eprintln!("\x1b[36m🔧 Quick fixes:\x1b[0m");
+                        eprintln!("   • sudo setcap cap_net_raw,cap_net_admin+eip $(which phobos)");
+                        eprintln!("   • sudo ./install_linux.sh (automatic setup)");
+                        eprintln!("   • sudo phobos [your-args]");
+                        eprintln!("\x1b[32m✓ Continuing with TCP Connect scan...\x1b[0m\n");
+                    }
+                    
+                    // Automatic fallback to TCP Connect
+                    let tcp_scanner = if technique.is_tcp() {
+                        Some(TcpConnectScanner::new(timeout_duration))
+                    } else {
+                        None
+                    };
+                    let udp_scanner = if technique == ScanTechnique::Udp {
+                        Some(UdpScanner::new(timeout_duration))
+                    } else {
+                        None
+                    };
+                    (None, tcp_scanner, udp_scanner)
+                }
+            }
         } else {
             let tcp_scanner = if technique.is_tcp() {
                 Some(TcpConnectScanner::new(timeout_duration))
@@ -107,8 +137,8 @@ impl ScanEngine {
         let batch_size = self.config.batch_size();
         let batches = create_batches(self.config.ports.clone(), target_ip, batch_size);
         
-        // Create semaphore to limit concurrent operations
-        let semaphore = Arc::new(Semaphore::new(self.config.threads));
+        // Create semaphore to limit concurrent operations with aggressive settings
+        let semaphore = Arc::new(Semaphore::new(self.config.threads * 2)); // 2x more aggressive for better performance
         
         // Result collector
         let result_collector = Arc::new(Mutex::new(Vec::new()));
@@ -203,7 +233,7 @@ impl ScanEngine {
         Ok(result)
     }
     
-    /// Scan a batch of ports
+    /// Scan a batch of ports with adaptive optimizations
     async fn scan_batch(
         &self,
         batch: ScanBatch,
@@ -211,48 +241,118 @@ impl ScanEngine {
     ) -> crate::Result<(Vec<PortResult>, ScanStats)> {
         let mut results = Vec::new();
         let mut stats = ScanStats::new();
+        let _batch_start = Instant::now();
+        let mut response_times = Vec::new();
         
-        for port in batch.ports {
-            // Rate limiting
-            {
-                let mut limiter = self.rate_limiter.lock().await;
-                while !limiter.can_send() {
-                    let delay = limiter.delay_until_next();
-                    if delay > Duration::from_millis(0) {
-                        tokio::time::sleep(delay).await;
+        // High-performance batch processing with parallel scanning
+        if self.config.technique == ScanTechnique::Connect && batch.ports.len() > 10 {
+            // Parallel processing for large batches
+            let mut tasks = Vec::new();
+            
+            for port in batch.ports {
+                let target = batch.target;
+                let scanner = self.tcp_scanner.clone();
+                let service_db = self.service_db.clone();
+                
+                let task = tokio::spawn(async move {
+                    let start_time = Instant::now();
+                    
+                    if let Some(ref scanner) = scanner {
+                        let is_open = scanner.scan_port(IpAddr::V4(target), port).await.unwrap_or(false);
+                        let response_time = start_time.elapsed();
+                        let state = if is_open { PortState::Open } else { PortState::Closed };
+                        
+                        let mut result = PortResult::new(port, Protocol::Tcp, state)
+                            .with_response_time(response_time);
+                        
+                        // Service detection
+                        if state == PortState::Open {
+                            if let Some(service_name) = service_db.get_tcp_service(port) {
+                                result = result.with_service(service_name.to_string());
+                            }
+                            
+                            // Real-time open port notification
+                            let service_info = if let Some(ref service) = result.service {
+                                format!(" ({})", service)
+                            } else {
+                                String::new()
+                            };
+                            println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", target, port, service_info);
+                        }
+                        
+                        (result, response_time)
+                    } else {
+                        let result = PortResult::new(port, Protocol::Tcp, PortState::Closed);
+                        (result, Duration::from_millis(0))
+                    }
+                });
+                tasks.push(task);
+            }
+            
+            // Collect results from parallel tasks
+             for task in tasks {
+                 if let Ok((port_result, response_time)) = task.await {
+                     stats.packets_sent += 1;
+                     if port_result.state == PortState::Open {
+                         stats.packets_received += 1;
+                     }
+                     stats.update_response_time(response_time);
+                     response_times.push(response_time.as_millis() as u64);
+                     
+                     // Store port number before moving result
+                     let port_num = port_result.port;
+                     results.push(port_result);
+                     
+                     // Update progress tracking
+                     {
+                         let mut progress = progress.lock().await;
+                         progress.update(port_num);
+                     }
+                 }
+             }
+        } else {
+            // Sequential processing for small batches or raw socket techniques
+            for port in batch.ports {
+                // Rate limiting
+                {
+                    let mut limiter = self.rate_limiter.lock().await;
+                    while !limiter.can_send() {
+                        let delay = limiter.delay_until_next();
+                        if delay > Duration::from_millis(0) {
+                            tokio::time::sleep(delay).await;
+                        }
                     }
                 }
-            }
-            
-            // Scan the port
-            let port_result = self.scan_port(batch.target, port).await?;
-            
-            // Real-time open port notification - INSTANT FEEDBACK!
-            if port_result.state == PortState::Open {
-                let service_info = if let Some(ref service) = port_result.service {
-                    format!(" ({})", service)
-                } else {
-                    String::new()
-                };
                 
-                // Use orange color for instant notifications (\x1b[38;5;208m = orange)
-                println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", 
-                    batch.target, port, service_info);
-            }
-            
-            // Update statistics
-            stats.packets_sent += 1;
-            if port_result.state == PortState::Open {
-                stats.packets_received += 1;
-            }
-            stats.update_response_time(port_result.response_time);
-            
-            results.push(port_result);
-            
-            // Update progress
-            {
-                let mut progress = progress.lock().await;
-                progress.update(port);
+                // Scan the port
+                let port_result = self.scan_port(batch.target, port).await?;
+                
+                // Real-time open port notification
+                if port_result.state == PortState::Open {
+                    let service_info = if let Some(ref service) = port_result.service {
+                        format!(" ({})", service)
+                    } else {
+                        String::new()
+                    };
+                    println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", 
+                        batch.target, port, service_info);
+                }
+                
+                // Update statistics
+                stats.packets_sent += 1;
+                if port_result.state == PortState::Open {
+                    stats.packets_received += 1;
+                }
+                stats.update_response_time(port_result.response_time);
+                response_times.push(port_result.response_time.as_millis() as u64);
+                
+                results.push(port_result);
+                
+                // Update progress
+                {
+                    let mut progress = progress.lock().await;
+                    progress.update(port);
+                }
             }
         }
         
@@ -307,15 +407,40 @@ impl ScanEngine {
         Ok(result)
     }
     
-    /// Scan a port using raw sockets
+    /// Scan a port using raw sockets with automatic fallback
     async fn scan_port_raw(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
-        let socket_pool = self.socket_pool.as_ref()
-            .ok_or_else(|| crate::ScanError::InvalidTarget("Socket pool not initialized".to_string()))?;
-        
-        if self.config.technique.is_tcp() {
-            self.scan_tcp_raw(socket_pool, target, port).await
+        // Check if we have a socket pool (raw socket mode)
+        if let Some(socket_pool) = self.socket_pool.as_ref() {
+            // Try raw socket scan
+            if self.config.technique.is_tcp() {
+                self.scan_tcp_raw(socket_pool, target, port).await
+            } else {
+                self.scan_udp_raw(socket_pool, target, port).await
+            }
         } else {
-            self.scan_udp_raw(socket_pool, target, port).await
+            // Fallback to TCP Connect scan if raw sockets not available
+            if self.config.technique.is_tcp() {
+                if let Some(ref scanner) = self.tcp_scanner {
+                    let is_open = scanner.scan_port(IpAddr::V4(target), port).await?;
+                    Ok(if is_open { PortState::Open } else { PortState::Closed })
+                } else {
+                    // Last resort: create a temporary TCP scanner
+                    let temp_scanner = TcpConnectScanner::new(self.config.timeout_duration());
+                    let is_open = temp_scanner.scan_port(IpAddr::V4(target), port).await?;
+                    Ok(if is_open { PortState::Open } else { PortState::Closed })
+                }
+            } else {
+                // UDP fallback
+                if let Some(ref scanner) = self.udp_scanner {
+                    let is_open = scanner.scan_port(IpAddr::V4(target), port).await?;
+                    Ok(if is_open { PortState::Open } else { PortState::Closed })
+                } else {
+                    // Last resort: create a temporary UDP scanner
+                    let temp_scanner = UdpScanner::new(self.config.timeout_duration());
+                    let is_open = temp_scanner.scan_port(IpAddr::V4(target), port).await?;
+                    Ok(if is_open { PortState::Open } else { PortState::Closed })
+                }
+            }
         }
     }
     
@@ -436,16 +561,31 @@ impl ScanEngine {
         }
     }
     
-    /// Clone engine for task spawning
+    /// Clone engine for task spawning with automatic fallback
     fn clone_for_task(&self) -> Self {
         let technique = self.config.technique;
         let timeout_duration = self.config.timeout_duration();
         
-        // Initialize components based on scan technique
+        // Initialize components with same fallback logic as main engine
         let (socket_pool, tcp_scanner, udp_scanner) = if technique.requires_raw_socket() {
-            // For raw socket techniques, create a new socket pool
-            let pool = SocketPool::new(10, 5).ok(); // 10 TCP, 5 UDP sockets
-            (pool, None, None)
+            // Try to create raw socket pool, fallback to TCP Connect if failed
+            match SocketPool::new(10, 5) {
+                Ok(pool) => (Some(pool), None, None),
+                Err(_) => {
+                    // Silent fallback for task clones
+                    let tcp_scanner = if technique.is_tcp() {
+                        Some(TcpConnectScanner::new(timeout_duration))
+                    } else {
+                        None
+                    };
+                    let udp_scanner = if technique == ScanTechnique::Udp {
+                        Some(UdpScanner::new(timeout_duration))
+                    } else {
+                        None
+                    };
+                    (None, tcp_scanner, udp_scanner)
+                }
+            }
         } else {
             let tcp_scanner = if technique.is_tcp() {
                 Some(TcpConnectScanner::new(timeout_duration))

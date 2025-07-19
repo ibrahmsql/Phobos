@@ -44,6 +44,15 @@ pub struct ScanConfig {
     
     /// Color for real-time notifications (orange, purple, etc.)
     pub notification_color: String,
+    
+    /// Adaptive learning - automatic performance optimization
+    pub adaptive_learning: bool,
+    
+    /// Minimum response time for adaptive tuning
+    pub min_response_time: u64,
+    
+    /// Maximum response time for adaptive tuning
+    pub max_response_time: u64,
 }
 
 impl Default for ScanConfig {
@@ -51,16 +60,19 @@ impl Default for ScanConfig {
         Self {
             target: "127.0.0.1".to_string(),
             ports: (1..=1000).collect(),
-            technique: ScanTechnique::Syn,
-            threads: 2000,
-            timeout: 500, // Faster timeout for speed
-            rate_limit: 5_000_000, // 5M packets per second - ULTRA FAST!
+            technique: ScanTechnique::Connect,
+            threads: 4500, // High concurrent connection count
+            timeout: 300, // Aggressive timeout for fast scanning
+            rate_limit: 10_000_000, // 10M packets per second - Ultra-fast scanning
             stealth_options: None,
             timing_template: 3, // Default timing template
             top_ports: None,
             batch_size: None, // Auto-calculate if None
             realtime_notifications: true, // Enable by default
             notification_color: "orange".to_string(), // Default orange color
+            adaptive_learning: true, // Enable adaptive learning for performance optimization
+            min_response_time: 50, // 50ms minimum response time
+            max_response_time: 3000, // 3s maximum response time
         }
     }
 }
@@ -116,9 +128,9 @@ impl ScanConfig {
             return custom_batch;
         }
         
-        // More aggressive batch sizing for maximum speed
-        let base_batch = std::cmp::max(50, (self.rate_limit as usize) / (self.threads * 2));
-        std::cmp::min(base_batch, 1000) // Cap at 1000 for stability
+        // Aggressive batch sizing for optimal performance
+        let base_batch = std::cmp::max(100, (self.rate_limit as usize) / (self.threads));
+        std::cmp::min(base_batch, 2000) // Large batch size for better performance
     }
     
     /// Load configuration from TOML file
@@ -134,22 +146,14 @@ impl ScanConfig {
     
     /// Load configuration from default locations
     pub fn load_default_config() -> Self {
-        // Try to load from ~/.phobos.toml first, then ~/.rustscan.toml for compatibility
+        // Try to load from ~/.phobos.toml
         let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         
         let phobos_config = home_dir.join(".phobos.toml");
-        let rustscan_config = home_dir.join(".rustscan.toml");
         
         if phobos_config.exists() {
             if let Ok(config) = Self::from_toml_file(&phobos_config) {
                 println!("[~] Loaded config from {}", phobos_config.display());
-                return config;
-            }
-        }
-        
-        if rustscan_config.exists() {
-            if let Ok(config) = Self::from_toml_file(&rustscan_config) {
-                println!("[~] Loaded config from {} (RustScan compatibility)", rustscan_config.display());
                 return config;
             }
         }
@@ -173,6 +177,31 @@ impl ScanConfig {
         }
         
         Ok(())
+    }
+    
+    /// Adaptive learning - automatic performance tuning based on network conditions
+    pub fn adapt_to_performance(&mut self, avg_response_time: u64, success_rate: f64) {
+        if !self.adaptive_learning {
+            return;
+        }
+        
+        // If response time is too slow, increase timeout
+        if avg_response_time > self.max_response_time {
+            self.timeout = std::cmp::min(self.timeout + 100, 5000);
+            self.threads = std::cmp::max(self.threads / 2, 1000); // Reduce thread count
+        }
+        // If very fast, be more aggressive
+        else if avg_response_time < self.min_response_time && success_rate > 0.95 {
+            self.timeout = std::cmp::max(self.timeout - 50, 100);
+            self.threads = std::cmp::min(self.threads + 500, 8000); // Increase threads
+            self.rate_limit = std::cmp::min(self.rate_limit + 1_000_000, 20_000_000); // Increase rate
+        }
+        
+        // If success rate is low, be more conservative
+        if success_rate < 0.8 {
+            self.timeout += 200;
+            self.threads = std::cmp::max(self.threads - 200, 500);
+        }
     }
 }
 
