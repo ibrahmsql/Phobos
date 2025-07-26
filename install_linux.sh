@@ -39,7 +39,7 @@ if command -v apt-get &> /dev/null; then
     # Install required packages
     echo -e "${YELLOW}Installing required packages...${NC}"
     sudo apt-get update
-    sudo apt-get install -y libcap2-bin curl build-essential
+    sudo apt-get install -y libcap2-bin curl build-essential git
     
 # For RHEL/CentOS/Fedora
 elif command -v yum &> /dev/null || command -v dnf &> /dev/null; then
@@ -52,14 +52,14 @@ elif command -v yum &> /dev/null || command -v dnf &> /dev/null; then
     fi
     
     echo -e "${YELLOW}Installing required packages...${NC}"
-    sudo $PKG_MANAGER install -y libcap curl gcc
+    sudo $PKG_MANAGER install -y libcap curl gcc git
     
 # For Arch Linux
 elif command -v pacman &> /dev/null; then
     echo "Arch Linux system detected"
     
     echo -e "${YELLOW}Installing required packages...${NC}"
-    sudo pacman -S --noconfirm libcap curl base-devel
+    sudo pacman -S --noconfirm libcap curl base-devel git
     
 else
     echo -e "${RED}Unsupported Linux distribution!${NC}"
@@ -77,9 +77,20 @@ else
     echo -e "${GREEN}Rust already installed: $(rustc --version)${NC}"
 fi
 
-# Compile Phobos
-echo -e "${BLUE}Compiling Phobos...${NC}"
-cd "$(dirname "$0")/Phobos"
+# Clone and compile Phobos
+echo -e "${BLUE}Cloning and compiling Phobos...${NC}"
+
+# Create temporary directory
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
+
+# Clone the repository
+echo -e "${YELLOW}Cloning Phobos repository...${NC}"
+git clone https://github.com/ibrahmsql/phobos.git
+cd phobos
+
+# Build the project
+echo -e "${YELLOW}Building Phobos...${NC}"
 cargo build --release
 
 # Copy binary
@@ -107,6 +118,11 @@ if [ -f "$BINARY_PATH" ]; then
     echo ""
     echo -e "${GREEN}🎉 You can now use it without root privileges!${NC}"
     
+    # Clean up temporary directory
+    echo -e "${BLUE}Cleaning up...${NC}"
+    cd /
+    rm -rf "$TEMP_DIR"
+    
     # Test
     echo -e "${BLUE}Testing...${NC}"
     if phobos --version &> /dev/null; then
@@ -118,6 +134,8 @@ if [ -f "$BINARY_PATH" ]; then
     
 else
     echo -e "${RED}❌ Compilation failed! Binary not found.${NC}"
+    cd /
+    rm -rf "$TEMP_DIR"
     exit 1
 fi
 

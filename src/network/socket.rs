@@ -17,7 +17,7 @@ pub struct RawSocket {
 impl RawSocket {
     /// Create a new raw TCP socket
     pub fn new_tcp() -> crate::Result<Self> {
-        let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::TCP))
+        let socket = Socket::new(Domain::IPV4, Type::from(libc::SOCK_RAW), Some(Protocol::TCP))
             .map_err(|e| {
                 if e.kind() == io::ErrorKind::PermissionDenied {
                     ScanError::PermissionError("Permission denied for raw socket".to_string())
@@ -37,7 +37,7 @@ impl RawSocket {
     
     /// Create a new raw UDP socket
     pub fn new_udp() -> crate::Result<Self> {
-        let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::UDP))
+        let socket = Socket::new(Domain::IPV4, Type::from(libc::SOCK_RAW), Some(Protocol::UDP))
             .map_err(|e| {
                 if e.kind() == io::ErrorKind::PermissionDenied {
                     ScanError::PermissionError("Permission denied for raw socket".to_string())
@@ -56,7 +56,7 @@ impl RawSocket {
     
     /// Create a new raw ICMP socket for receiving responses
     pub fn new_icmp() -> crate::Result<Self> {
-        let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))
+        let socket = Socket::new(Domain::IPV4, Type::from(libc::SOCK_RAW), Some(Protocol::ICMPV4))
             .map_err(|e| {
                 if e.kind() == io::ErrorKind::PermissionDenied {
                     ScanError::PermissionError("Permission denied for raw socket".to_string())
