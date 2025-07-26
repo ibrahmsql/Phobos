@@ -847,6 +847,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "number_prefix"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -971,13 +981,16 @@ dependencies = [
  "env_logger",
  "futures",
  "indicatif",
+ "ipnetwork",
  "libc",
  "log",
+ "num_cpus",
  "openssl",
  "pnet",
  "proptest",
  "quick-xml",
  "rand 0.8.5",
+ "regex",
  "rlimit",
  "serde",
  "serde_json",
@@ -987,6 +1000,7 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "toml",
+ "uuid",
 ]
 
 [[package]]
@@ -1695,6 +1709,18 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
+dependencies = [
+ "getrandom 0.3.3",
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "vcpkg"

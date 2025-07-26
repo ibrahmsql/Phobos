@@ -5,6 +5,7 @@
 pub mod benchmark;
 pub mod config;
 pub mod error;
+pub mod intelligence;
 pub mod network;
 pub mod output;
 pub mod scanner;
@@ -15,6 +16,7 @@ pub mod utils;
 pub use benchmark::{Benchmark, NamedTimer};
 pub use error::{ScanError, ScanResult};
 pub use config::ScanConfig;
+pub use intelligence::{IntelligenceEngine, IntelligenceConfig, IntelligenceResults};
 pub use network::ScanTechnique;
 pub use scanner::engine::ScanEngine;
 pub use top_ports::{get_top_1000_ports, get_top_ports};
