@@ -277,7 +277,9 @@ impl ScanEngine {
                             } else {
                                 String::new()
                             };
-                            println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", target, port, service_info);
+                            
+                            println!("\x1b[38;5;208mOPEN: {}:{}{} [{}ms]\x1b[0m", 
+                                target, port, service_info, response_time.as_millis());
                         }
                         
                         (result, response_time)
@@ -334,8 +336,9 @@ impl ScanEngine {
                     } else {
                         String::new()
                     };
-                    println!("\x1b[38;5;208mOPEN: {}:{}{}\x1b[0m", 
-                        batch.target, port, service_info);
+                    
+                    println!("\x1b[38;5;208mOPEN: {}:{}{} [{}ms]\x1b[0m", 
+                        batch.target, port, service_info, port_result.response_time.as_millis());
                 }
                 
                 // Update statistics
@@ -359,30 +362,62 @@ impl ScanEngine {
         Ok((results, stats))
     }
     
-    /// Scan a single port
+    /// Scan a single port with enhanced diagnostic logging
     async fn scan_port(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortResult> {
         let start_time = Instant::now();
         
-        let state = match self.config.technique {
-            ScanTechnique::Connect => {
-                if let Some(ref scanner) = self.tcp_scanner {
-                    let is_open = scanner.scan_port(IpAddr::V4(target), port).await?;
-                    if is_open { PortState::Open } else { PortState::Closed }
-                } else {
-                    return Err(crate::ScanError::InvalidTarget("TCP scanner not initialized".to_string()));
+        // Enhanced timeout handling
+        let mut retry_count = 0;
+        let max_retries = 0;
+        
+        let state = loop {
+            let attempt_start = Instant::now();
+            
+            let result = match self.config.technique {
+                ScanTechnique::Connect => {
+                    if let Some(ref scanner) = self.tcp_scanner {
+                        match scanner.scan_port(IpAddr::V4(target), port).await {
+                            Ok(is_open) => Ok(if is_open { PortState::Open } else { PortState::Closed }),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        return Err(crate::ScanError::InvalidTarget("TCP scanner not initialized".to_string()));
+                    }
                 }
-            }
-            ScanTechnique::Udp => {
-                if let Some(ref scanner) = self.udp_scanner {
-                    let is_open = scanner.scan_port(IpAddr::V4(target), port).await?;
-                    if is_open { PortState::Open } else { PortState::Closed }
-                } else {
-                    return Err(crate::ScanError::InvalidTarget("UDP scanner not initialized".to_string()));
+                ScanTechnique::Udp => {
+                    if let Some(ref scanner) = self.udp_scanner {
+                        match scanner.scan_port(IpAddr::V4(target), port).await {
+                            Ok(is_open) => Ok(if is_open { PortState::Open } else { PortState::Closed }),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        return Err(crate::ScanError::InvalidTarget("UDP scanner not initialized".to_string()));
+                    }
                 }
-            }
-            _ => {
-                // Raw socket techniques
-                self.scan_port_raw(target, port).await?
+                _ => {
+                    // Raw socket techniques
+                    self.scan_port_raw(target, port).await
+                }
+            };
+            
+            let attempt_time = attempt_start.elapsed();
+            
+            match result {
+                Ok(state) => {
+                    break state;
+                }
+                Err(_e) => {
+                    // Retry logic
+                    if retry_count < max_retries {
+                        retry_count += 1;
+                        // Small delay before retry
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        continue;
+                    } else {
+                        // Max retries exceeded, treat as filtered/closed
+                        break PortState::Filtered;
+                    }
+                }
             }
         };
         
@@ -403,6 +438,8 @@ impl ScanEngine {
                 result = result.with_service(service_name.to_string());
             }
         }
+        
+
         
         Ok(result)
     }

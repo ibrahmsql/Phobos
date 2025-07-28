@@ -151,7 +151,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(
             Arg::new("top")
                 .long("top")
-                .help("Use the top 1000 ports")
+                .help("Explicitly use the top 1000 ports (now default behavior)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("all")
+                .long("all")
+                .help("Scan all 65535 ports (1-65535) - Ultra comprehensive scan")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -165,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .short('p')
                 .long("ports")
                 .value_name("PORTS")
-                .help("Port range to scan (e.g., 1-1000, 80,443,8080, U:53,T:80)")
+                .help("Port range to scan (e.g., 1-1000, 80,443,8080, U:53,T:80). Default: top 1000 ports. Use --all for full range")
                 .default_value("1-1000"),
         )
         .arg(
@@ -237,12 +243,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Only scan ports, don't run Nmap scripts")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("config")
+                .short('c')
+                .long("config")
+                .value_name("FILE")
+                .help("Configuration file path"),
+        )
+        .arg(
+            Arg::new("nmap-args")
+                .long("nmap-args")
+                .value_name("ARGS")
+                .help("Additional arguments to pass to Nmap"),
+        )
         .get_matches();
     
     let greppable = matches.get_flag("greppable");
     let accessible = matches.get_flag("accessible");
     let no_banner = matches.get_flag("no-banner");
     let top_ports = matches.get_flag("top");
+    let all_ports = matches.get_flag("all");
     let _udp_mode = matches.get_flag("udp");
     let exclude_ports: Option<Vec<String>> = matches.get_many::<String>("exclude-ports")
         .map(|vals| vals.map(|s| s.to_string()).collect());
@@ -284,12 +304,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Resolve hostname to IP if needed
     let target = resolve_target(target_input)?;
     
-    // Parse ports
-    let mut ports = if top_ports {
+    // Parse ports with new default behavior
+    let mut ports = if all_ports {
+        // --all flag: scan all 65535 ports (true comprehensive scan)
+        println!("{} {}", "[~] 🚀 FULL PORT SCAN: All 65535 ports".bright_red().bold(), "(--all flag)".bright_yellow());
+        println!("{} {}", "[!] This will take significantly longer!".bright_yellow(), "Consider using --threads and --timeout for optimization".bright_cyan());
+        (1..=65535).collect()
+    } else if top_ports {
+        // Explicit --top flag usage
+        println!("{} {}", "[~] Using explicit top 1000 ports".bright_blue(), "(--top flag)".bright_yellow());
         get_top_1000_ports()
     } else {
         let port_spec = matches.get_one::<String>("ports").unwrap();
-        parse_ports(port_spec)?
+        if port_spec == "1-1000" {
+            // Default behavior: use top 1000 ports instead of 1-1000 range
+            println!("{} {}", "[~] Using top 1000 ports".bright_blue(), "(default behavior)".bright_yellow());
+            get_top_1000_ports()
+        } else {
+            // Custom port range specified
+            println!("{} {}", "[~] Using custom port range:".bright_blue(), port_spec.bright_cyan());
+            parse_ports(port_spec)?
+        }
     };
     
     // Exclude ports if specified
@@ -297,7 +332,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let exclude_ports: Vec<u16> = exclude_list.iter()
             .filter_map(|s| s.parse().ok())
             .collect();
+        
+        println!("{} {}", 
+            "[~] Excluding ports:".bright_yellow(),
+            exclude_ports.iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+                .bright_red()
+        );
+        
         ports.retain(|&port| !exclude_ports.contains(&port));
+    }
+    
+    // Port diagnostics removed as requested
+    
+    // Compare with different port sets for debugging
+    if matches.get_flag("verbose") {
+        let top_1000 = get_top_1000_ports();
+        let range_1_1000: Vec<u16> = (1..=1000).collect();
+        
+        if all_ports {
+            println!("{} {} {}", 
+                "[~] Full scan coverage:".bright_green().bold(),
+                "65535 ports".bright_white().bold(),
+                "(complete TCP port range)".bright_cyan()
+            );
+            println!("{} {} {}", 
+                "[~] Includes".bright_blue(),
+                (65535 - top_1000.len()).to_string().bright_white().bold(),
+                "additional ports beyond top-1000".bright_blue()
+            );
+            println!("{} {}", 
+                "[~] Port range:".bright_yellow(),
+                "1-65535 (comprehensive)".bright_cyan()
+            );
+        } else {
+            if ports != top_1000 {
+                compare_port_lists(&ports, "top-1000", &top_1000);
+            }
+            if ports != range_1_1000 {
+                compare_port_lists(&ports, "1-1000 range", &range_1_1000);
+            }
+        }
     }
     let technique_str = matches.get_one::<String>("technique").unwrap();
     let timing_level = matches.get_one::<String>("timing").unwrap().parse::<u8>().unwrap_or(3);
@@ -353,15 +430,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_response_time: base_config.max_response_time,
     };
     
-    // Show batch size info with colors
+    // Show batch size info with colors and special handling for --all
     let calculated_batch = scan_config.batch_size();
-    println!("{} File limit higher than batch size. Can increase speed by increasing batch size {}.", 
-        "[~]".bright_blue(),
-        format!("'-b {}'", calculated_batch * 2).bright_green().bold()
-    );
     
-    if calculated_batch > 1000 {
-        println!("[!] High batch size detected ({}). Consider lowering it if you experience issues.", calculated_batch);
+    if all_ports {
+        println!("{} {} {}", 
+            "[~] Full port scan optimization:".bright_green().bold(),
+            "Using batch size".bright_blue(),
+            calculated_batch.to_string().bright_white().bold()
+        );
+        println!("{} {}", 
+            "[~] Estimated scan time:".bright_yellow(),
+            format!("~{} minutes (depends on network)", (65535 / (calculated_batch * threads)).max(1)).bright_cyan()
+        );
+        if calculated_batch < 5000 {
+            println!("{} {}", 
+                "[!] For faster --all scans, consider:".bright_yellow(),
+                format!("'-b {}' '--threads {}'", calculated_batch * 4, threads * 2).bright_green().bold()
+            );
+        }
+    } else {
+        println!("{} File limit higher than batch size. Can increase speed by increasing batch size {}.", 
+            "[~]".bright_blue(),
+            format!("'-b {}'", calculated_batch * 2).bright_green().bold()
+        );
+        
+        if calculated_batch > 1000 {
+            println!("[!] High batch size detected ({}). Consider lowering it if you experience issues.", calculated_batch);
+        }
     }
 
     // Validate configuration
@@ -508,6 +604,55 @@ fn run_nmap_scan(target: &str, open_ports: &[u16], nmap_args: Option<&String>) {
 
 
 
+
+
+/// Compare port lists and show differences for debugging
+fn compare_port_lists(current_ports: &[u16], reference_name: &str, reference_ports: &[u16]) {
+    let missing_from_current: Vec<u16> = reference_ports.iter()
+        .filter(|&&port| !current_ports.contains(&port))
+        .copied()
+        .collect();
+    
+    let extra_in_current: Vec<u16> = current_ports.iter()
+        .filter(|&&port| !reference_ports.contains(&port))
+        .copied()
+        .collect();
+    
+    if !missing_from_current.is_empty() {
+        println!("{} {} {} {}", 
+            "[~] Missing from".bright_yellow(),
+            reference_name.bright_cyan(),
+            "scan:".bright_yellow(),
+            missing_from_current.iter()
+                .take(10) // Show first 10
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+                .bright_red()
+        );
+        if missing_from_current.len() > 10 {
+            println!("    {} {} {}", 
+                "...and".bright_yellow(),
+                (missing_from_current.len() - 10).to_string().bright_red(),
+                "more ports".bright_yellow()
+            );
+        }
+    }
+    
+    if !extra_in_current.is_empty() && extra_in_current.len() < 50 {
+        println!("{} {} {} {}", 
+            "[~] Extra in current scan vs".bright_green(),
+            reference_name.bright_cyan(),
+            ":".bright_green(),
+            extra_in_current.iter()
+                .take(10)
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+                .bright_green()
+        );
+    }
+}
 
 
 fn parse_ports(port_spec: &str) -> anyhow::Result<Vec<u16>> {

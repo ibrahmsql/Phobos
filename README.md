@@ -91,7 +91,10 @@ chmod +x phobos
 
 #### Linux
 ```bash
-# Ubuntu/Debian
+# Automated installer (recommended)
+curl -sSL https://raw.githubusercontent.com/ibrahmsql/phobos/main/install_linux.sh | bash
+
+# Manual installation
 wget https://github.com/ibrahmsql/phobos/releases/latest/download/phobos-linux
 chmod +x phobos-linux
 sudo mv phobos-linux /usr/local/bin/phobos
