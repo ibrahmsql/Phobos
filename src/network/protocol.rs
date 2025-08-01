@@ -211,10 +211,18 @@ impl RateLimiter {
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.last_send).as_secs_f64();
         
-        // Add tokens based on elapsed time
-        self.tokens += elapsed * self.rate as f64;
-        if self.tokens > self.max_tokens {
-            self.tokens = self.max_tokens;
+        // Prevent division by zero and overflow
+        if self.rate == 0 {
+            return false;
+        }
+        
+        // Add tokens based on elapsed time with overflow protection
+        let tokens_to_add = elapsed * self.rate as f64;
+        if tokens_to_add.is_finite() && tokens_to_add >= 0.0 {
+            self.tokens += tokens_to_add;
+            if self.tokens > self.max_tokens {
+                self.tokens = self.max_tokens;
+            }
         }
         
         self.last_send = now;
@@ -229,12 +237,18 @@ impl RateLimiter {
     
     /// Calculate delay needed before next send
     pub fn delay_until_next(&self) -> Duration {
-        if self.tokens >= 1.0 {
+        if self.tokens >= 1.0 || self.rate == 0 {
             Duration::from_millis(0)
         } else {
             let needed_tokens = 1.0 - self.tokens;
             let delay_secs = needed_tokens / self.rate as f64;
-            Duration::from_secs_f64(delay_secs)
+            
+            // Ensure delay is finite and reasonable
+            if delay_secs.is_finite() && delay_secs >= 0.0 && delay_secs <= 60.0 {
+                Duration::from_secs_f64(delay_secs)
+            } else {
+                Duration::from_secs(1) // Fallback to 1 second
+            }
         }
     }
 }

@@ -137,8 +137,8 @@ impl ScanEngine {
         let batch_size = self.config.batch_size();
         let batches = create_batches(self.config.ports.clone(), target_ip, batch_size);
         
-        // Create semaphore to limit concurrent operations with aggressive settings
-        let semaphore = Arc::new(Semaphore::new(self.config.threads * 2)); // 2x more aggressive for better performance
+        // Create semaphore to limit concurrent operations with reasonable settings
+        let semaphore = Arc::new(Semaphore::new(self.config.threads)); // Use configured thread count
         
         // Result collector
         let result_collector = Arc::new(Mutex::new(Vec::new()));
@@ -146,14 +146,24 @@ impl ScanEngine {
         // Progress tracking
         let progress = Arc::new(Mutex::new(ScanProgress::new(self.config.ports.len())));
         
-        // Channel for collecting statistics
-        let (stats_tx, mut stats_rx) = mpsc::unbounded_channel::<ScanStats>();
+        // Channel for collecting statistics with bounded capacity
+        let (stats_tx, mut stats_rx) = mpsc::channel::<ScanStats>(100);
         
         // Spawn tasks for each batch
         let mut handles = Vec::new();
         
         for batch in batches {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = match timeout(Duration::from_secs(30), semaphore.clone().acquire_owned()).await {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(e)) => {
+                    log::error!("Failed to acquire semaphore permit: {}", e);
+                    continue;
+                }
+                Err(_) => {
+                    log::error!("Timeout waiting for semaphore permit");
+                    continue;
+                }
+            };
             let collector = result_collector.clone();
             let progress_tracker = progress.clone();
             let stats_sender = stats_tx.clone();
@@ -165,14 +175,20 @@ impl ScanEngine {
                 
                 match batch_result {
                     Ok((port_results, batch_stats)) => {
-                        // Collect results
-                        {
-                            let mut collector = collector.lock().await;
-                            collector.extend(port_results);
+                        // Collect results with timeout to prevent deadlock
+                        match timeout(Duration::from_secs(5), collector.lock()).await {
+                            Ok(mut collector) => {
+                                collector.extend(port_results);
+                            }
+                            Err(_) => {
+                                log::error!("Timeout acquiring result collector lock");
+                            }
                         }
                         
-                        // Send stats
-                        let _ = stats_sender.send(batch_stats);
+                        // Send stats with error handling
+                        if let Err(e) = stats_sender.try_send(batch_stats) {
+                            log::warn!("Failed to send batch stats: {}", e);
+                        }
                     }
                     Err(e) => {
                         log::error!("Batch scan failed: {}", e);
@@ -208,18 +224,39 @@ impl ScanEngine {
             combined_stats
         });
         
-        // Wait for all tasks to complete
+        // Wait for all tasks to complete with timeout
+        let task_timeout = Duration::from_secs(300); // 5 minute timeout
         for handle in handles {
-            let _ = handle.await;
+            match timeout(task_timeout, handle).await {
+                Ok(Ok(_)) => {},
+                Ok(Err(e)) => log::error!("Task failed: {}", e),
+                Err(_) => log::error!("Task timed out"),
+            }
         }
         
-        // Get final statistics
-        let stats = stats_handle.await.unwrap();
+        // Get final statistics with timeout
+        let stats = match timeout(Duration::from_secs(10), stats_handle).await {
+            Ok(Ok(stats)) => stats,
+            Ok(Err(e)) => {
+                log::error!("Failed to collect statistics: {}", e);
+                ScanStats::new()
+            }
+            Err(_) => {
+                log::error!("Statistics collection timed out");
+                ScanStats::new()
+            }
+        };
         
-        // Collect all results
-        let port_results = {
-            let collector = result_collector.lock().await;
-            collector.clone()
+        // Collect all results with timeout to prevent deadlock
+        let port_results = match tokio::time::timeout(
+            Duration::from_secs(30),
+            result_collector.lock()
+        ).await {
+            Ok(collector) => collector.clone(),
+            Err(_) => {
+                log::error!("Timeout while collecting results, using empty results");
+                Vec::new()
+            }
         };
         
         // Process results
@@ -366,6 +403,16 @@ impl ScanEngine {
     async fn scan_port(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortResult> {
         let start_time = Instant::now();
         
+        // Rate limiting enforcement
+        {
+            let mut rate_limiter = self.rate_limiter.lock().await;
+            if !rate_limiter.can_send() {
+                let delay = rate_limiter.delay_until_next();
+                drop(rate_limiter); // Release lock before sleeping
+                tokio::time::sleep(delay).await;
+            }
+        }
+        
         // Enhanced timeout handling
         let mut retry_count = 0;
         let max_retries = 0;
@@ -400,7 +447,7 @@ impl ScanEngine {
                 }
             };
             
-            let attempt_time = attempt_start.elapsed();
+            let _attempt_time = attempt_start.elapsed();
             
             match result {
                 Ok(state) => {
@@ -541,7 +588,7 @@ impl ScanEngine {
         ))
     }
     
-    /// Wait for TCP response
+    /// Wait for TCP response with proper exit conditions
     async fn wait_for_tcp_response(
         &self,
         socket_pool: &SocketPool,
@@ -553,11 +600,24 @@ impl ScanEngine {
         let mut buf = [0u8; 1500];
         
         let timeout_duration = self.config.timeout_duration();
+        let max_attempts = 100; // Prevent infinite loop
+        let mut attempts = 0;
         
         match timeout(timeout_duration, async {
             loop {
+                if attempts >= max_attempts {
+                    log::warn!("Max attempts reached waiting for TCP response from {}:{}", target, port);
+                    break None;
+                }
+                
                 match socket.recv_from(&mut buf) {
                     Ok((size, _)) => {
+                        if size == 0 {
+                            attempts += 1;
+                            tokio::time::sleep(Duration::from_millis(1)).await;
+                            continue;
+                        }
+                        
                         if let Some(response) = PacketParser::parse_tcp_response(&buf[..size]) {
                             // Check if this response is for our probe
                             if response.source_ip == target && 
@@ -566,8 +626,10 @@ impl ScanEngine {
                                 return Some(response);
                             }
                         }
+                        attempts += 1;
                     }
                     Err(_) => {
+                        attempts += 1;
                         tokio::time::sleep(Duration::from_millis(1)).await;
                     }
                 }

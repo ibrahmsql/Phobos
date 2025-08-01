@@ -80,32 +80,40 @@ impl RawSocket {
         Ok(bytes_sent)
     }
     
-    /// Receive a packet from the socket
+    /// Receive a packet from the socket (safe implementation)
     pub fn recv_from(&self, buf: &mut [u8]) -> crate::Result<(usize, SocketAddr)> {
         use std::mem::MaybeUninit;
         
-        // Convert &mut [u8] to &mut [MaybeUninit<u8>]
-        let buf_uninit = unsafe {
-            std::slice::from_raw_parts_mut(
-                buf.as_mut_ptr() as *mut MaybeUninit<u8>,
-                buf.len()
-            )
-        };
+        // Create a properly initialized MaybeUninit buffer
+        let mut uninit_buf: Vec<MaybeUninit<u8>> = vec![MaybeUninit::uninit(); buf.len()];
         
-        match self.socket.recv_from(buf_uninit) {
+        match self.socket.recv_from(&mut uninit_buf) {
             Ok((size, addr)) => {
                 let socket_addr = match addr.as_socket() {
                     Some(addr) => addr,
                     None => return Err(ScanError::NetworkError(
-                        "Invalid socket address".to_string()
+                        "Invalid socket address received".to_string()
                     )),
                 };
+                
+                // Validate received size
+                if size > buf.len() {
+                    return Err(ScanError::NetworkError(
+                        "Received size exceeds buffer length".to_string()
+                    ));
+                }
+                
+                // Safely copy the received data to the output buffer
+                for i in 0..size {
+                    buf[i] = unsafe { uninit_buf[i].assume_init() };
+                }
+                
                 Ok((size, socket_addr))
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                Err(ScanError::NetworkError(e.to_string()))
+                Err(ScanError::NetworkError("Socket would block".to_string()))
             }
-            Err(e) => Err(ScanError::NetworkError(e.to_string())),
+            Err(e) => Err(ScanError::NetworkError(format!("Socket receive error: {}", e))),
         }
     }
     

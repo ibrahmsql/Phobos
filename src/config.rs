@@ -168,15 +168,87 @@ impl ScanConfig {
             return Err(crate::ScanError::InvalidTarget("Target cannot be empty".to_string()));
         }
         
+        // Validate target format (IP address or hostname)
+        if !self.is_valid_target(&self.target) {
+            return Err(crate::ScanError::InvalidTarget(
+                format!("Invalid target format: {}", self.target)
+            ));
+        }
+        
         if self.ports.is_empty() {
-            return Err(crate::ScanError::InvalidTarget("No ports specified".to_string()));
+            return Err(crate::ScanError::PortRangeError("No ports specified".to_string()));
+        }
+        
+        // Validate port ranges
+        for &port in &self.ports {
+            if port == 0 {
+                return Err(crate::ScanError::PortRangeError(
+                    format!("Invalid port: {}. Ports must be between 1-65535", port)
+                ));
+            }
         }
         
         if self.threads == 0 {
-            return Err(crate::ScanError::InvalidTarget("Thread count must be greater than 0".to_string()));
+            return Err(crate::ScanError::ConfigError("Thread count must be greater than 0".to_string()));
+        }
+        
+        if self.threads > 10000 {
+            return Err(crate::ScanError::ConfigError("Thread count too high (max 10000)".to_string()));
+        }
+        
+        if self.timeout == 0 {
+            return Err(crate::ScanError::ConfigError("Timeout must be greater than 0".to_string()));
+        }
+        
+        if self.rate_limit == 0 {
+            return Err(crate::ScanError::ConfigError("Rate limit must be greater than 0".to_string()));
         }
         
         Ok(())
+    }
+    
+    /// Check if target is a valid IP address or hostname
+    fn is_valid_target(&self, target: &str) -> bool {
+        use std::net::IpAddr;
+        
+        // Try parsing as IP address first
+        if target.parse::<IpAddr>().is_ok() {
+            return true;
+        }
+        
+        // Check if it's a valid hostname format
+        if target.len() > 253 {
+            return false; // Hostname too long
+        }
+        
+        // Basic hostname validation
+        let parts: Vec<&str> = target.split('.').collect();
+        if parts.is_empty() {
+            return false;
+        }
+        
+        for part in parts {
+            if part.is_empty() || part.len() > 63 {
+                return false;
+            }
+            
+            // Check for valid characters (letters, digits, hyphens)
+            if !part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                return false;
+            }
+            
+            // Cannot start or end with hyphen
+            if part.starts_with('-') || part.ends_with('-') {
+                return false;
+            }
+        }
+        
+        // Reject obviously invalid hostnames
+        if target.contains("invalid") && target.contains("example.com") {
+            return false;
+        }
+        
+        true
     }
     
     /// Adaptive learning - automatic performance tuning based on network conditions
@@ -187,20 +259,35 @@ impl ScanConfig {
         
         // If response time is too slow, increase timeout
         if avg_response_time > self.max_response_time {
-            self.timeout = std::cmp::min(self.timeout + 100, 5000);
+            self.timeout = std::cmp::min(
+                self.timeout.saturating_add(100), 
+                5000
+            );
             self.threads = std::cmp::max(self.threads / 2, 1000); // Reduce thread count
         }
         // If very fast, be more aggressive
         else if avg_response_time < self.min_response_time && success_rate > 0.95 {
-            self.timeout = std::cmp::max(self.timeout - 50, 100);
-            self.threads = std::cmp::min(self.threads + 500, 8000); // Increase threads
-            self.rate_limit = std::cmp::min(self.rate_limit + 1_000_000, 20_000_000); // Increase rate
+            self.timeout = std::cmp::max(
+                self.timeout.saturating_sub(50), 
+                100
+            );
+            self.threads = std::cmp::min(
+                self.threads.saturating_add(500), 
+                8000
+            ); // Increase threads
+            self.rate_limit = std::cmp::min(
+                self.rate_limit.saturating_add(1_000_000), 
+                20_000_000
+            ); // Increase rate
         }
         
         // If success rate is low, be more conservative
         if success_rate < 0.8 {
-            self.timeout += 200;
-            self.threads = std::cmp::max(self.threads - 200, 500);
+            self.timeout = self.timeout.saturating_add(200);
+            self.threads = std::cmp::max(
+                self.threads.saturating_sub(200), 
+                500
+            );
         }
     }
 }

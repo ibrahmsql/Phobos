@@ -123,7 +123,9 @@ impl ErrorHandler {
     /// Calculate retry delay with exponential backoff
     pub fn get_retry_delay(&self, attempt: usize) -> u64 {
         let base_delay = self.retry_delay_ms;
-        let exponential_delay = base_delay * (2_u64.pow(attempt as u32));
+        let exponential_delay = base_delay.saturating_mul(
+            2_u64.saturating_pow(attempt.min(10) as u32)
+        );
         std::cmp::min(exponential_delay, 30000) // Cap at 30 seconds
     }
     
@@ -235,20 +237,26 @@ pub async fn scan_with_fallback(
     ))
 }
 
-/// Perform scan with a specific technique
+/// Helper function to perform scan with a specific technique
 async fn perform_scan_with_technique(
     target: &str,
     ports: &[u16],
     technique: crate::network::ScanTechnique,
     config: &crate::config::ScanConfig,
 ) -> ScanResult<Vec<crate::scanner::ScanResult>> {
+    use crate::scanner::engine::ScanEngine;
+    
     let mut scan_config = config.clone();
-    scan_config.technique = technique;
     scan_config.target = target.to_string();
     scan_config.ports = ports.to_vec();
+    scan_config.technique = technique;
     
-    let engine = crate::scanner::engine::ScanEngine::new(scan_config).await?;
-    let result = engine.scan().await?;
+    let engine = ScanEngine::new(scan_config).await
+        .map_err(|e| ScanError::NetworkError(e.to_string()))?;
+    
+    let result = engine.scan().await
+        .map_err(|e| ScanError::NetworkError(e.to_string()))?;
+    
     Ok(vec![result])
 }
 

@@ -155,8 +155,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("all")
-                .long("all")
+            Arg::new("full-range")
+                .long("full-range")
                 .help("Scan all 65535 ports (1-65535) - Ultra comprehensive scan")
                 .action(ArgAction::SetTrue),
         )
@@ -198,7 +198,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("COUNT")
                 .help("Number of concurrent threads")
                 .value_parser(clap::value_parser!(usize))
-                .default_value("4500"), // High concurrent connection count
+                .default_value("100"), // Reasonable default thread count
         )
         .arg(
             Arg::new("timeout")
@@ -244,6 +244,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("all")
+                .long("all")
+                .help("Show all port states (open, closed, filtered). Default: only open ports")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("config")
                 .short('c')
                 .long("config")
@@ -262,7 +268,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let accessible = matches.get_flag("accessible");
     let no_banner = matches.get_flag("no-banner");
     let top_ports = matches.get_flag("top");
-    let all_ports = matches.get_flag("all");
+    let full_range_ports = matches.get_flag("full-range");
+    let show_all_states = matches.get_flag("all");
     let _udp_mode = matches.get_flag("udp");
     let exclude_ports: Option<Vec<String>> = matches.get_many::<String>("exclude-ports")
         .map(|vals| vals.map(|s| s.to_string()).collect());
@@ -305,9 +312,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = resolve_target(target_input)?;
     
     // Parse ports with new default behavior
-    let mut ports = if all_ports {
-        // --all flag: scan all 65535 ports (true comprehensive scan)
-        println!("{} {}", "[~] 🚀 FULL PORT SCAN: All 65535 ports".bright_red().bold(), "(--all flag)".bright_yellow());
+    let mut ports = if full_range_ports {
+        // --full-range flag: scan all 65535 ports (true comprehensive scan)
+        println!("{} {}", "[~] 🚀 FULL PORT SCAN: All 65535 ports".bright_red().bold(), "(--full-range flag)".bright_yellow());
         println!("{} {}", "[!] This will take significantly longer!".bright_yellow(), "Consider using --threads and --timeout for optimization".bright_cyan());
         (1..=65535).collect()
     } else if top_ports {
@@ -352,7 +359,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let top_1000 = get_top_1000_ports();
         let range_1_1000: Vec<u16> = (1..=1000).collect();
         
-        if all_ports {
+        if full_range_ports {
             println!("{} {} {}", 
                 "[~] Full scan coverage:".bright_green().bold(),
                 "65535 ports".bright_white().bold(),
@@ -433,7 +440,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Show batch size info with colors and special handling for --all
     let calculated_batch = scan_config.batch_size();
     
-    if all_ports {
+    if full_range_ports {
         println!("{} {} {}", 
             "[~] Full port scan optimization:".bright_green().bold(),
             "Using batch size".bright_blue(),
@@ -496,31 +503,71 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|pr| pr.port)
                 .collect();
             
-            for port in &open_ports {
-                let service = results.port_results.iter()
-                    .find(|pr| pr.port == *port)
-                    .and_then(|pr| pr.service.as_deref())
-                    .unwrap_or("unknown");
-                println!("{} {}:{} ({})", 
-                    "OPEN:".bright_green().bold(),
-                    target.bright_cyan(),
-                    port.to_string().bright_white().bold(),
-                    service.bright_yellow()
-                );
-            }
-            
-            println!();
-            
-            // Show open ports in clean format
-            if !open_ports.is_empty() {
-                let ports_str = open_ports.iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                println!("{} {}", 
-                    "Open".bright_green().bold(),
-                    format!("{}:[{}]", target.bright_cyan(), ports_str.bright_white().bold())
-                );
+            // Show scan summary based on --all flag (inverted logic)
+            if !show_all_states {
+                // Default: only show open ports (like nmap --open)
+                if !open_ports.is_empty() {
+                    println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+                    println!("Host is up.");
+                    
+                    let closed_count = results.port_results.len() - open_ports.len();
+                    if closed_count > 0 {
+                        println!("Not shown: {} closed tcp ports", closed_count.to_string().bright_yellow());
+                    }
+                    
+                    println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
+                    
+                    for port in &open_ports {
+                        let service = results.port_results.iter()
+                            .find(|pr| pr.port == *port)
+                            .and_then(|pr| pr.service.as_deref())
+                            .unwrap_or("unknown");
+                        println!("{:<8} {:<8} {}", 
+                            format!("{}/tcp", port).bright_white(),
+                            "open".bright_green(),
+                            service.bright_yellow()
+                        );
+                    }
+                } else {
+                    println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+                    println!("Host is up.");
+                    println!("All {} scanned ports on {} are closed", results.port_results.len(), target);
+                }
+            } else {
+                // --all flag: show all port states (open, closed, filtered)
+                println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+                println!("Host is up.");
+                println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
+                
+                for port_result in &results.port_results {
+                    let service = port_result.service.as_deref().unwrap_or("unknown");
+                    let state_str = match port_result.state {
+                        phobos::network::PortState::Open => "open".bright_green(),
+                        phobos::network::PortState::Closed => "closed".bright_red(),
+                        phobos::network::PortState::Filtered => "filtered".bright_yellow(),
+                        phobos::network::PortState::OpenFiltered => "open|filtered".bright_magenta(),
+                        phobos::network::PortState::ClosedFiltered => "closed|filtered".bright_red(),
+                        phobos::network::PortState::Unfiltered => "unfiltered".bright_blue(),
+                    };
+                    println!("{:<8} {:<8} {}", 
+                        format!("{}/tcp", port_result.port).bright_white(),
+                        state_str,
+                        service.bright_yellow()
+                    );
+                }
+                
+                // Also show summary in clean format
+                if !open_ports.is_empty() {
+                    let ports_str = open_ports.iter()
+                        .map(|p| p.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    println!();
+                    println!("{} {}", 
+                        "Open".bright_green().bold(),
+                        format!("{}:[{}]", target.bright_cyan(), ports_str.bright_white().bold())
+                    );
+                }
             }
             
             if let Err(e) = output_manager.write_results(&results) {
@@ -673,13 +720,24 @@ fn parse_ports(port_spec: &str) -> anyhow::Result<Vec<u16>> {
             if range.len() != 2 {
                 return Err(anyhow::anyhow!("Invalid port range: {}", part));
             }
-            let start: u16 = range[0].parse()?;
-            let end: u16 = range[1].parse()?;
+            let start: u16 = range[0].parse().map_err(|e| anyhow::anyhow!("Invalid start port '{}': {}", range[0], e))?;
+            let end: u16 = range[1].parse().map_err(|e| anyhow::anyhow!("Invalid end port '{}': {}", range[1], e))?;
+            
+            if start == 0 || end == 0 {
+                return Err(anyhow::anyhow!("Port 0 is not valid"));
+            }
+            if start > end {
+                return Err(anyhow::anyhow!("Start port {} cannot be greater than end port {}", start, end));
+            }
             for port in start..=end {
                 ports.push(port);
             }
         } else {
-            ports.push(port_part.parse()?);
+            let port: u16 = port_part.parse().map_err(|e| anyhow::anyhow!("Invalid port '{}': {}", port_part, e))?;
+            if port == 0 {
+                return Err(anyhow::anyhow!("Port 0 is not valid"));
+            }
+            ports.push(port);
         }
     }
     

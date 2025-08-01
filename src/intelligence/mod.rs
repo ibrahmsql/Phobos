@@ -26,9 +26,7 @@ mod service_detection_tests;
 #[path = "benchmark_tests.rs"]
 mod benchmark_tests;
 
-#[cfg(test)]
-#[path = "speed_test.rs"]
-mod speed_test;
+// Speed test module removed - file not found
 
 // Re-export core types
 pub use core::{
