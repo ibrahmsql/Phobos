@@ -62,7 +62,7 @@ impl Default for ScanConfig {
             ports: (1..=1000).collect(),
             technique: ScanTechnique::Connect,
             threads: 4500, // High concurrent connection count
-            timeout: 300, // Aggressive timeout for fast scanning
+            timeout: 3000, // Reasonable timeout for reliable detection
             rate_limit: 10_000_000, // 10M packets per second - Ultra-fast scanning
             stealth_options: None,
             timing_template: 3, // Default timing template

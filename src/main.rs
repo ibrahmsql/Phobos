@@ -206,7 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("MS")
                 .help("Timeout in milliseconds")
                 .value_parser(clap::value_parser!(u64))
-                .default_value("300"), // Aggressive timeout for fast scanning
+                .default_value("3000"), // Reasonable timeout for reliable detection
         )
         .arg(
             Arg::new("rate-limit")

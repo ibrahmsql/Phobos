@@ -175,13 +175,13 @@ impl TcpConnectScanner {
         
         // Adaptive learning - adjust timeout based on response time
         let response_time = start_time.elapsed().as_millis() as u64;
-        if result && response_time < 50 {
-            // Very fast response - decrease timeout
-            let new_timeout = std::cmp::max(current_timeout.as_millis() as u64 - 10, 50);
+        if result && response_time < 100 {
+            // Very fast response - decrease timeout slightly
+            let new_timeout = std::cmp::max(current_timeout.as_millis() as u64 - 50, 1000);
             self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
         } else if !result && response_time >= current_timeout.as_millis() as u64 {
             // Timeout occurred - increase timeout
-            let new_timeout = std::cmp::min(current_timeout.as_millis() as u64 + 50, 3000);
+            let new_timeout = std::cmp::min(current_timeout.as_millis() as u64 + 200, 5000);
             self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
         }
         
