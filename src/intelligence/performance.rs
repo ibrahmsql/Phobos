@@ -251,13 +251,15 @@ unsafe impl Sync for ZeroCopyBuffer {}
 impl Drop for ZeroCopyBuffer {
     fn drop(&mut self) {
         if !self.is_pooled {
-            if let Some(ptr) = self.ptr {
+            if let Some(ptr) = self.ptr.take() {
                 unsafe {
                     let layout = Layout::from_size_align(self.size, 8).unwrap();
                     dealloc(ptr.as_ptr(), layout);
                 }
             }
         }
+        // Clear the pointer to prevent double-free
+        self.ptr = None;
     }
 }
 

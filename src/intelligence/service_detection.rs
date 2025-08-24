@@ -167,7 +167,11 @@ impl ServiceDetector for ServiceDetectionEngine {
     
     /// Fast SSL/TLS analysis
     async fn analyze_ssl(&self, target: SocketAddr) -> Option<SSLInfo> {
-        self.ssl_analyzer.analyze_fast(target, self.timeout).await
+        if self.is_ssl_port(target.port()) {
+            self.ssl_analyzer.analyze_fast(target, self.timeout).await
+        } else {
+            None
+        }
     }
     
     /// Fast vulnerability scanning
