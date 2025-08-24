@@ -161,25 +161,7 @@ impl OutputManager {
             output.push('\n');
         }
         
-        // Statistics
-        if self.config.verbose {
-            output.push_str("📈 STATISTICS:\n");
-            output.push_str(&format!("  Packets sent: {}\n", results.stats.packets_sent));
-            output.push_str(&format!("  Packets received: {}\n", results.stats.packets_received));
-            output.push_str(&format!("  Timeouts: {}\n", results.stats.timeouts));
-            output.push_str(&format!("  Errors: {}\n", results.stats.errors));
-            output.push_str(&format!("  Average RTT: {:.1}ms\n", results.stats.avg_response_time.as_millis()));
-            output.push('\n');
-        }
-        
-        // Summary
-        let total_scanned = results.open_ports.len() + results.closed_ports.len() + results.filtered_ports.len();
-        output.push_str(&format!("📋 SUMMARY: {} open, {} closed, {} filtered ({} total)\n",
-            results.open_ports.len(),
-            results.closed_ports.len(),
-            results.filtered_ports.len(),
-            total_scanned
-        ));
+        // Statistics and summary removed as requested
         
         output
     }

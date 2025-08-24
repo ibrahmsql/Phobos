@@ -266,6 +266,36 @@ impl PacketParser {
             payload: udp_packet.payload().to_vec(),
         })
     }
+    
+    /// Parse an ICMP packet and extract relevant information
+    pub fn parse_icmp_response(packet: &[u8]) -> Option<IcmpResponse> {
+        if packet.len() < 20 {
+            return None;
+        }
+        
+        let ip_packet = Ipv4Packet::new(packet)?;
+        
+        // Check if it's an ICMP packet
+        if ip_packet.get_next_level_protocol() != IpNextHeaderProtocols::Icmp {
+            return None;
+        }
+        
+        let icmp_payload = ip_packet.payload();
+        if icmp_payload.len() < 8 {
+            return None;
+        }
+        
+        let icmp_type = icmp_payload[0];
+        let icmp_code = icmp_payload[1];
+        
+        Some(IcmpResponse {
+            source_ip: ip_packet.get_source(),
+            dest_ip: ip_packet.get_destination(),
+            icmp_type,
+            icmp_code,
+            payload: icmp_payload[8..].to_vec(),
+        })
+    }
 }
 
 /// TCP response structure
@@ -304,4 +334,22 @@ pub struct UdpResponse {
     pub dest_port: u16,
     pub length: u16,
     pub payload: Vec<u8>,
+}
+
+/// ICMP response structure
+#[derive(Debug, Clone)]
+pub struct IcmpResponse {
+    pub source_ip: Ipv4Addr,
+    pub dest_ip: Ipv4Addr,
+    pub icmp_type: u8,
+    pub icmp_code: u8,
+    pub payload: Vec<u8>,
+}
+
+impl IcmpResponse {
+    /// Check if this is a port unreachable message
+    pub fn is_port_unreachable(&self, target_ip: std::net::Ipv4Addr, _target_port: u16) -> bool {
+        // ICMP Type 3 (Destination Unreachable), Code 3 (Port Unreachable)
+        self.icmp_type == 3 && self.icmp_code == 3 && self.dest_ip == target_ip
+    }
 }

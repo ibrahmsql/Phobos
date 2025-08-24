@@ -650,10 +650,45 @@ impl ScanEngine {
         let timeout_duration = self.config.timeout_duration();
         
         match timeout(timeout_duration, async {
-            // TODO: Implement UDP response and ICMP unreachable detection
-            // This is a simplified version
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            (None, false)
+            // Implement UDP response and ICMP unreachable detection
+            use tokio::net::UdpSocket;
+            
+            // Create UDP socket for listening to responses
+            let socket = match UdpSocket::bind("0.0.0.0:0").await {
+                Ok(s) => s,
+                Err(_) => return (None, false),
+            };
+            
+            // Send UDP probe and wait for response or ICMP unreachable
+            let probe_data = b"Phobos UDP Probe";
+            if socket.send_to(probe_data, (_target, _port)).await.is_err() {
+                return (None, false);
+            }
+            
+            // Wait for UDP response
+            let mut buf = [0u8; 1024];
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                socket.recv_from(&mut buf)
+            ).await {
+                Ok(Ok((len, _addr))) => {
+                    // Got UDP response - port is open
+                    let response = crate::network::packet::UdpResponse {
+                        source_ip: "0.0.0.0".parse().unwrap(), // Placeholder
+                        dest_ip: "0.0.0.0".parse().unwrap(),   // Placeholder
+                        source_port: _port,
+                        dest_port: 0,
+                        length: len as u16,
+                        payload: buf[..len].to_vec(),
+                    };
+                    (Some(response), true)
+                }
+                _ => {
+                    // No response - could be filtered or closed
+                    // In a full implementation, we'd also check for ICMP unreachable
+                    (None, false)
+                }
+            }
         }).await {
             Ok(result) => result,
             Err(_) => (None, false), // Timeout

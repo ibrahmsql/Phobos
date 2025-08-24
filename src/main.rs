@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Parse command line arguments first to check for greppable mode
     let matches = Command::new("phobos")
-        .version("1.0.0")
+        .version("1.1.1")
         .author("ibrahimsql")
         .about("Phobos: The Blazingly Fast Rust-Based Port Scanner That Outspeeds Nmap & Masscan")
         .arg(
@@ -270,7 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let top_ports = matches.get_flag("top");
     let full_range_ports = matches.get_flag("full-range");
     let show_all_states = matches.get_flag("all");
-    let _udp_mode = matches.get_flag("udp");
+    let udp_mode = matches.get_flag("udp");
     let exclude_ports: Option<Vec<String>> = matches.get_many::<String>("exclude-ports")
         .map(|vals| vals.map(|s| s.to_string()).collect());
     
@@ -390,7 +390,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rate_limit = *matches.get_one::<u64>("rate-limit").unwrap();
 
     // Parse scan technique
-    let technique = match technique_str.as_str() {
+    let mut technique = match technique_str.as_str() {
         "syn" => ScanTechnique::Syn,
         "connect" => ScanTechnique::Connect,
         "udp" => ScanTechnique::Udp,
@@ -404,6 +404,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             process::exit(1);
         }
     };
+    
+    // Override technique if UDP flag is set
+    if udp_mode {
+        technique = ScanTechnique::Udp;
+        println!("{} {}", "[~] UDP mode enabled".bright_blue(), "(--udp flag)".bright_yellow());
+    }
 
     // Parse stealth options
     let stealth_options = StealthOptions::default();
@@ -486,7 +492,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and run scanner
     let engine = ScanEngine::new(scan_config.clone()).await?;
     
-    println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.0.0".bright_green().bold());
+    println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.1.1".bright_green().bold());
     println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
     println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
     println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());

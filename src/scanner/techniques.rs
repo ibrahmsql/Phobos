@@ -365,8 +365,13 @@ impl ScanTechniqueImpl for UdpScan {
                 }
                 
                 // Check for ICMP unreachable (indicates closed)
-                // TODO: Implement ICMP parsing
-                Ok(false)
+                if let Some(icmp_response) = crate::network::packet::PacketParser::parse_icmp_response(&buf[..size]) {
+                    if icmp_response.is_port_unreachable(target, port) {
+                        return Ok(false); // ICMP unreachable = closed
+                    }
+                }
+                
+                Ok(false) // Other response types
             }
             Err(_) => Ok(true), // Timeout = open|filtered (UDP is stateless)
         }

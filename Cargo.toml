@@ -1,6 +1,6 @@
 [package]
 name = "phobos"
-version = "1.0.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["ibrahimsql"]
 description = "Phobos: The Blazingly Fast Rust-Based Port Scanner That Outspeeds Nmap & Masscan"
@@ -42,6 +42,7 @@ ipnetwork = "0.20"
 num_cpus = "1.16"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 regex = "1.10"
+async-trait = "0.1"
 
 
 
