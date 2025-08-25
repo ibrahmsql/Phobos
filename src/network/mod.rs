@@ -1,5 +1,6 @@
 //! Network module for packet crafting and protocol handling
 
+pub mod icmp;
 pub mod packet;
 pub mod protocol;
 pub mod socket;

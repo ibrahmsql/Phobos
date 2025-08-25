@@ -72,21 +72,36 @@ impl StealthOptions {
     }
     
     /// Apply stealth options to a TCP packet builder
-    pub fn apply_to_tcp_packet(&self, _builder: &mut TcpPacketBuilder) {
-        // Note: Source port and sequence randomization would need to be implemented
-        // in TcpPacketBuilder or handled differently
-        // if self.randomize_source_port {
-        //     builder.source_port(Self::random_source_port());
-        // }
-        // 
-        // if self.randomize_sequence {
-        //     builder.sequence_number(Self::random_sequence());
-        // }
+    pub fn apply_to_tcp_packet(&self, builder: &mut TcpPacketBuilder) {
+        // Apply source port randomization
+        if self.randomize_source_port {
+            builder.source_port(Self::random_source_port());
+        }
         
-        // Note: Packet padding would need to be implemented in TcpPacketBuilder
-        // if let Some(padding) = self.packet_padding {
-        //     builder.add_padding(padding);
-        // }
+        // Apply sequence number randomization
+        if self.randomize_sequence {
+            builder.sequence_number(Self::random_sequence());
+        }
+        
+        // Apply IP ID randomization
+        if self.randomize_ip_id {
+            builder.ip_id(Self::random_ip_id());
+        }
+        
+        // Apply packet padding
+        if let Some(padding) = self.packet_padding {
+            builder.add_padding(padding);
+        }
+        
+        // Apply custom MTU
+        if let Some(mtu) = self.custom_mtu {
+            builder.set_mtu(mtu);
+        }
+        
+        // Apply bad checksum for evasion
+        if self.use_bad_checksum {
+            builder.use_bad_checksum(true);
+        }
     }
     
     /// Generate random source port
@@ -96,7 +111,7 @@ impl StealthOptions {
     }
     
     /// Generate random sequence number
-    fn _random_sequence() -> u32 {
+    fn random_sequence() -> u32 {
         let mut rng = rand::thread_rng();
         rng.gen()
     }
@@ -235,8 +250,30 @@ impl DecoyScanner {
                 builder.syn().build()
             }
             Protocol::Udp => {
-                // UDP packet creation
-                vec![] // Placeholder
+                let source_v4 = match source {
+                    IpAddr::V4(addr) => addr,
+                    IpAddr::V6(_) => return vec![], // Skip IPv6 for now
+                };
+                let target_v4 = match target {
+                    IpAddr::V4(addr) => addr,
+                    IpAddr::V6(_) => return vec![], // Skip IPv6 for now
+                };
+                
+                use crate::network::packet::UdpPacketBuilder;
+                let probe_data = match port {
+                    53 => b"\x00\x00\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00".to_vec(), // DNS query
+                    161 => b"\x30\x26\x02\x01\x01\x04\x06\x70\x75\x62\x6c\x69\x63".to_vec(), // SNMP
+                    _ => b"Phobos UDP Probe".to_vec(), // Generic probe
+                };
+                
+                UdpPacketBuilder::new(
+                    source_v4,
+                    target_v4,
+                    StealthOptions::random_source_port(),
+                    port,
+                )
+                .payload(probe_data)
+                .build()
             }
             _ => vec![],
         }

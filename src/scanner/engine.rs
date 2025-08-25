@@ -644,14 +644,15 @@ impl ScanEngine {
     async fn wait_for_udp_response(
         &self,
         _socket_pool: &SocketPool,
-        _target: Ipv4Addr,
-        _port: u16,
+        target: Ipv4Addr,
+        port: u16,
     ) -> (Option<crate::network::packet::UdpResponse>, bool) {
         let timeout_duration = self.config.timeout_duration();
         
         match timeout(timeout_duration, async {
             // Implement UDP response and ICMP unreachable detection
             use tokio::net::UdpSocket;
+            use std::net::{IpAddr, Ipv4Addr};
             
             // Create UDP socket for listening to responses
             let socket = match UdpSocket::bind("0.0.0.0:0").await {
@@ -659,9 +660,20 @@ impl ScanEngine {
                 Err(_) => return (None, false),
             };
             
+            // Get local IP address for proper source IP
+            let local_addr = match socket.local_addr() {
+                Ok(addr) => addr,
+                Err(_) => return (None, false),
+            };
+            
+            let source_ip = match local_addr.ip() {
+                IpAddr::V4(ipv4) => ipv4,
+                _ => Ipv4Addr::new(127, 0, 0, 1), // Fallback to localhost
+            };
+            
             // Send UDP probe and wait for response or ICMP unreachable
             let probe_data = b"Phobos UDP Probe";
-            if socket.send_to(probe_data, (_target, _port)).await.is_err() {
+            if socket.send_to(probe_data, (target, port)).await.is_err() {
                 return (None, false);
             }
             
@@ -671,13 +683,18 @@ impl ScanEngine {
                 Duration::from_millis(500),
                 socket.recv_from(&mut buf)
             ).await {
-                Ok(Ok((len, _addr))) => {
+                Ok(Ok((len, response_addr))) => {
                     // Got UDP response - port is open
+                    let response_ip = match response_addr.ip() {
+                        IpAddr::V4(ipv4) => ipv4,
+                        _ => target, // Fallback to target IP
+                    };
+                    
                     let response = crate::network::packet::UdpResponse {
-                        source_ip: "0.0.0.0".parse().unwrap(), // Placeholder
-                        dest_ip: "0.0.0.0".parse().unwrap(),   // Placeholder
-                        source_port: _port,
-                        dest_port: 0,
+                        source_ip: response_ip.into(),
+                        dest_ip: source_ip.into(),
+                        source_port: port,
+                        dest_port: local_addr.port(),
                         length: len as u16,
                         payload: buf[..len].to_vec(),
                     };
@@ -685,13 +702,47 @@ impl ScanEngine {
                 }
                 _ => {
                     // No response - could be filtered or closed
-                    // In a full implementation, we'd also check for ICMP unreachable
-                    (None, false)
+                    // Check for ICMP unreachable messages
+                    if let Ok(icmp_result) = self.check_icmp_unreachable(target, port).await {
+                        (None, icmp_result)
+                    } else {
+                        (None, false)
+                    }
                 }
             }
         }).await {
             Ok(result) => result,
             Err(_) => (None, false), // Timeout
+        }
+    }
+    
+    /// Check for ICMP unreachable messages to determine if UDP port is closed
+    async fn check_icmp_unreachable(&self, target: Ipv4Addr, _port: u16) -> crate::Result<bool> {
+        use std::process::Command;
+        
+        // Use system ping to check if host is reachable
+        let output = Command::new("ping")
+            .arg("-c")
+            .arg("1")
+            .arg("-W")
+            .arg("1000") // 1 second timeout
+            .arg(target.to_string())
+            .output();
+            
+        match output {
+            Ok(result) => {
+                if result.status.success() {
+                    // Host is reachable, so UDP port is likely closed/filtered
+                    Ok(true)
+                } else {
+                    // Host unreachable
+                    Ok(false)
+                }
+            },
+            Err(_) => {
+                // Cannot determine, assume filtered
+                Ok(false)
+            }
         }
     }
     

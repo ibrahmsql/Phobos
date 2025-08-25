@@ -216,14 +216,16 @@ pub struct ErrorHandler {
 /// Circuit breaker for service protection
 pub struct CircuitBreaker {
     state: Arc<RwLock<CircuitBreakerState>>,
-    failure_threshold: u32,
-    recovery_timeout: Duration,
+    _failure_threshold: u32,
+    _recovery_timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
 enum CircuitBreakerState {
     Closed,
+    #[allow(dead_code)]
     Open { opened_at: Instant },
+    #[allow(dead_code)]
     HalfOpen,
 }
 
@@ -274,8 +276,8 @@ impl CircuitBreaker {
     pub fn new(failure_threshold: u32, recovery_timeout: Duration) -> Self {
         Self {
             state: Arc::new(RwLock::new(CircuitBreakerState::Closed)),
-            failure_threshold,
-            recovery_timeout,
+            _failure_threshold: failure_threshold,
+            _recovery_timeout: recovery_timeout,
         }
     }
     
@@ -294,14 +296,14 @@ pub struct IntelligenceEngine {
     
     // Intelligence components
     service_detector: Option<Arc<super::ServiceDetectionEngine>>,
-    distributed_coordinator: Option<Arc<super::DistributedCoordinator>>,
+    _distributed_coordinator: Option<Arc<super::DistributedCoordinator>>,
     network_discoverer: Option<Arc<super::NetworkDiscoveryEngine>>,
     asset_manager: Option<Arc<RwLock<super::AssetManager>>>,
     
     // Performance optimization
     performance_monitor: Arc<super::PerformanceMonitor>,
-    memory_pool: Arc<super::MemoryPool>,
-    thread_pool: Arc<super::UltraFastThreadPool>,
+    _memory_pool: Arc<super::MemoryPool>,
+    _thread_pool: Arc<super::UltraFastThreadPool>,
     
     // Concurrency control
     semaphore: Arc<Semaphore>,
@@ -355,7 +357,7 @@ impl IntelligenceEngine {
             None
         };
         
-        let distributed_coordinator = if config.enable_distributed_scanning {
+        let _distributed_coordinator = if config.enable_distributed_scanning {
             Some(Arc::new(super::DistributedCoordinator::new(
                 config.distributed_timeout,
                 thread_pool.clone(),
@@ -387,12 +389,12 @@ impl IntelligenceEngine {
             config,
             scan_engine,
             service_detector,
-            distributed_coordinator,
+            _distributed_coordinator,
             network_discoverer,
             asset_manager,
             performance_monitor,
-            memory_pool,
-            thread_pool,
+            _memory_pool: memory_pool,
+            _thread_pool: thread_pool,
             semaphore,
             error_handler: Arc::new(ErrorHandler::new()),
             circuit_breaker: Arc::new(CircuitBreaker::new(5, Duration::from_secs(30))),

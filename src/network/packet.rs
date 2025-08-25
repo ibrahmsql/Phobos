@@ -18,6 +18,10 @@ pub struct TcpPacketBuilder {
     seq_num: u32,
     ack_num: u32,
     window_size: u16,
+    ip_id: u16,
+    padding: Option<usize>,
+    mtu: Option<u16>,
+    bad_checksum: bool,
 }
 
 impl TcpPacketBuilder {
@@ -32,6 +36,10 @@ impl TcpPacketBuilder {
             seq_num: rng.gen(),
             ack_num: 0,
             window_size: 65535,
+            ip_id: rng.gen(),
+            padding: None,
+            mtu: None,
+            bad_checksum: false,
         }
     }
     
@@ -85,13 +93,50 @@ impl TcpPacketBuilder {
         self
     }
     
+    /// Set source port (for stealth)
+    pub fn source_port(&mut self, port: u16) {
+        self.source_port = port;
+    }
+    
+    /// Set sequence number (for stealth)
+    pub fn sequence_number(&mut self, seq: u32) {
+        self.seq_num = seq;
+    }
+    
+    /// Set IP ID (for stealth)
+    pub fn ip_id(&mut self, id: u16) {
+        self.ip_id = id;
+    }
+    
+    /// Add packet padding (for stealth)
+    pub fn add_padding(&mut self, padding: usize) {
+        self.padding = Some(padding);
+    }
+    
+    /// Set custom MTU (for stealth)
+    pub fn set_mtu(&mut self, mtu: u16) {
+        self.mtu = Some(mtu);
+    }
+    
+    /// Use bad checksum for evasion
+    pub fn use_bad_checksum(&mut self, bad: bool) {
+        self.bad_checksum = bad;
+    }
+    
     /// Build the complete IP + TCP packet
     pub fn build(self) -> Vec<u8> {
         const IP_HEADER_LEN: usize = 20;
-        const TCP_HEADER_LEN: usize = 20;
-        const TOTAL_LEN: usize = IP_HEADER_LEN + TCP_HEADER_LEN;
+        let tcp_header_len = 20 + self.padding.unwrap_or(0);
+        let total_len = IP_HEADER_LEN + tcp_header_len;
         
-        let mut packet_buf = vec![0u8; TOTAL_LEN];
+        // Apply MTU limit if specified
+        let final_len = if let Some(mtu) = self.mtu {
+            std::cmp::min(total_len, mtu as usize)
+        } else {
+            total_len
+        };
+        
+        let mut packet_buf = vec![0u8; final_len];
         
         // Build IP header
         {
@@ -100,8 +145,8 @@ impl TcpPacketBuilder {
             ip_packet.set_header_length(5); // 5 * 4 = 20 bytes
             ip_packet.set_dscp(0);
             ip_packet.set_ecn(0);
-            ip_packet.set_total_length(TOTAL_LEN as u16);
-            ip_packet.set_identification(rand::thread_rng().gen());
+            ip_packet.set_total_length(final_len as u16);
+            ip_packet.set_identification(self.ip_id); // Use custom IP ID
             ip_packet.set_flags(2); // Don't fragment
             ip_packet.set_fragment_offset(0);
             ip_packet.set_ttl(64);
@@ -116,23 +161,39 @@ impl TcpPacketBuilder {
         
         // Build TCP header
         {
-            let mut tcp_packet = MutableTcpPacket::new(&mut packet_buf[IP_HEADER_LEN..]).unwrap();
-            tcp_packet.set_source(self.source_port);
-            tcp_packet.set_destination(self.dest_port);
-            tcp_packet.set_sequence(self.seq_num);
-            tcp_packet.set_acknowledgement(self.ack_num);
-            tcp_packet.set_data_offset(5); // 5 * 4 = 20 bytes
-            tcp_packet.set_flags(self.flags as u16);
-            tcp_packet.set_window(self.window_size);
-            tcp_packet.set_urgent_ptr(0);
-            
-            // Calculate and set TCP checksum
-            let checksum = pnet::packet::tcp::ipv4_checksum(
-                &tcp_packet.to_immutable(),
-                &self.source_ip,
-                &self.dest_ip,
-            );
-            tcp_packet.set_checksum(checksum);
+            let tcp_len = final_len - IP_HEADER_LEN;
+            if tcp_len >= 20 {
+                let mut tcp_packet = MutableTcpPacket::new(&mut packet_buf[IP_HEADER_LEN..IP_HEADER_LEN + std::cmp::min(tcp_len, 20)]).unwrap();
+                tcp_packet.set_source(self.source_port);
+                tcp_packet.set_destination(self.dest_port);
+                tcp_packet.set_sequence(self.seq_num);
+                tcp_packet.set_acknowledgement(self.ack_num);
+                tcp_packet.set_data_offset(5); // 5 * 4 = 20 bytes
+                tcp_packet.set_flags(self.flags as u16);
+                tcp_packet.set_window(self.window_size);
+                tcp_packet.set_urgent_ptr(0);
+                
+                // Calculate and set TCP checksum
+                let checksum = if self.bad_checksum {
+                    0xFFFF // Intentionally bad checksum for evasion
+                } else {
+                    pnet::packet::tcp::ipv4_checksum(
+                        &tcp_packet.to_immutable(),
+                        &self.source_ip,
+                        &self.dest_ip,
+                    )
+                };
+                tcp_packet.set_checksum(checksum);
+                
+                // Add padding if specified
+                if let Some(padding) = self.padding {
+                    let padding_start = IP_HEADER_LEN + 20;
+                    let padding_end = std::cmp::min(padding_start + padding, final_len);
+                    for i in padding_start..padding_end {
+                        packet_buf[i] = 0x00; // NOP padding
+                    }
+                }
+            }
         }
         
         packet_buf

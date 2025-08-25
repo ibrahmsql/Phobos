@@ -2,14 +2,15 @@
 //! Target: 3x faster than RustScan distributed scanning
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
+
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use rand;
 
 use super::core::IntelligenceResult;
 use super::performance::UltraFastThreadPool;
@@ -71,7 +72,7 @@ pub struct PortScanResult {
 
 pub struct DistributedCoordinator {
     timeout: Duration,
-    thread_pool: Arc<UltraFastThreadPool>,
+    _thread_pool: Arc<UltraFastThreadPool>,
     node_manager: Arc<NodeManager>,
     load_balancer: Arc<LoadBalancer>,
     active_tasks: Arc<Mutex<HashMap<Uuid, ScanTask>>>,
@@ -83,14 +84,14 @@ impl DistributedCoordinator {
         timeout: Duration,
         thread_pool: Arc<UltraFastThreadPool>,
     ) -> IntelligenceResult<Self> {
-        let node_manager = Arc::new(NodeManager::new().await?);
+        let node_manager = Arc::new(NodeManager::new());
         let load_balancer = Arc::new(LoadBalancer::new());
         let active_tasks = Arc::new(Mutex::new(HashMap::new()));
         let result_sender = Arc::new(Mutex::new(None));
         
         Ok(Self {
             timeout,
-            thread_pool,
+            _thread_pool: thread_pool,
             node_manager,
             load_balancer,
             active_tasks,
@@ -116,13 +117,29 @@ pub trait DistributedScanner {
 impl DistributedScanner for DistributedCoordinator {
     /// Discover available worker nodes (3x faster than RustScan)
     async fn discover_nodes(&self) -> Vec<WorkerNode> {
-        self.node_manager.discover_nodes().await
+        self.node_manager.get_available_nodes()
     }
     
     /// Distribute targets with smart load balancing
     async fn distribute_targets(&self, targets: Vec<IpAddr>) -> Vec<ScanTask> {
-        let nodes = self.discover_nodes().await;
-        let tasks = self.load_balancer.distribute_tasks(targets, nodes).await;
+        let mut tasks = Vec::new();
+        
+        for target in targets {
+            let task = ScanTask {
+                id: Uuid::new_v4(),
+                targets: vec![target],
+                ports: vec![22, 80, 443, 8080], // Common ports
+                assigned_node: None,
+                priority: TaskPriority::Medium,
+                created_at: SystemTime::now(),
+                timeout: self.timeout,
+            };
+            tasks.push(task);
+        }
+        
+        // Assign tasks to nodes using load balancer
+        let available_nodes = self.node_manager.get_available_nodes();
+        self.load_balancer.assign_tasks(&mut tasks, &available_nodes);
         
         // Store active tasks
         {
@@ -212,75 +229,40 @@ impl DistributedScanner for DistributedCoordinator {
 
 pub struct NodeManager {
     nodes: Arc<Mutex<HashMap<Uuid, WorkerNode>>>,
-    heartbeat_interval: Duration,
 }
 
 impl NodeManager {
-    pub async fn new() -> IntelligenceResult<Self> {
-        Ok(Self {
+    pub fn new() -> Self {
+        Self {
             nodes: Arc::new(Mutex::new(HashMap::new())),
-            heartbeat_interval: Duration::from_secs(30),
-        })
-    }
-    
-    pub async fn discover_nodes(&self) -> Vec<WorkerNode> {
-        // In a real implementation, this would use mDNS or service discovery
-        // For now, return localhost as a worker node
-        let node = WorkerNode {
-            id: Uuid::new_v4(),
-            address: "127.0.0.1".parse().unwrap(),
-            port: 8080,
-            capacity: 1000,
-            current_load: 0,
-            last_heartbeat: Some(SystemTime::now()),
-            status: NodeStatus::Active,
-        };
-        
-        // Store the node
-        {
-            let mut nodes = self.nodes.lock().unwrap();
-            nodes.insert(node.id, node.clone());
         }
-        
-        vec![node]
     }
-    
+
     pub async fn execute_task_on_node(&self, node_id: Uuid, task: &ScanTask) -> IntelligenceResult<ScanResult> {
-        // In a real implementation, this would send the task to the remote node
-        // For now, simulate local execution
+        // Simulate task execution on remote node
         println!("Executing task {} on node {}", task.id, node_id);
         
-        // Update node load
-        {
-            let mut nodes = self.nodes.lock().unwrap();
-            if let Some(node) = nodes.get_mut(&node_id) {
-                node.current_load += 1;
-                node.last_heartbeat = Some(SystemTime::now());
-            }
-        }
-        
-        // Simulate scan results
-        let mut results = Vec::new();
-        for target in &task.targets {
-            for &port in &task.ports {
-                results.push(PortScanResult {
+        // Create mock result
+        let results = task.targets.iter().flat_map(|target| {
+            task.ports.iter().map(|port| {
+                PortScanResult {
                     target: *target,
-                    port,
-                    is_open: port == 80 || port == 443, // Simulate some open ports
-                    service: if port == 80 { Some("http".to_string()) } else if port == 443 { Some("https".to_string()) } else { None },
-                    response_time: Duration::from_millis(10),
-                });
-            }
-        }
-        
+                    port: *port,
+                    is_open: rand::random::<bool>(),
+                    service: Some("unknown".to_string()),
+                    response_time: Duration::from_millis(rand::random::<u64>() % 100),
+                }
+            })
+        }).collect();
+
         Ok(ScanResult {
             task_id: task.id,
             node_id,
             results,
-            execution_time: Duration::from_millis(100),
+            execution_time: Duration::from_millis(rand::random::<u64>() % 1000),
         })
     }
-    
+
     pub async fn mark_node_failed(&self, node_id: Uuid) -> IntelligenceResult<()> {
         let mut nodes = self.nodes.lock().unwrap();
         if let Some(node) = nodes.get_mut(&node_id) {
@@ -289,95 +271,29 @@ impl NodeManager {
         }
         Ok(())
     }
+
+    pub fn get_available_nodes(&self) -> Vec<WorkerNode> {
+        let nodes = self.nodes.lock().unwrap();
+        nodes.values()
+            .filter(|node| node.status == NodeStatus::Active)
+            .cloned()
+            .collect()
+    }
 }
 
-pub struct LoadBalancer {
-    strategy: LoadBalancingStrategy,
-}
-
-#[derive(Debug, Clone)]
-enum LoadBalancingStrategy {
-    RoundRobin,
-    LeastLoaded,
-    Weighted,
-}
+pub struct LoadBalancer;
 
 impl LoadBalancer {
     pub fn new() -> Self {
-        Self {
-            strategy: LoadBalancingStrategy::LeastLoaded,
-        }
+        Self
     }
-    
-    pub async fn distribute_tasks(&self, targets: Vec<IpAddr>, nodes: Vec<WorkerNode>) -> Vec<ScanTask> {
-        let mut tasks = Vec::new();
-        
-        if nodes.is_empty() {
-            return tasks;
-        }
-        
-        match self.strategy {
-            LoadBalancingStrategy::LeastLoaded => {
-                // Sort nodes by current load
-                let mut sorted_nodes = nodes;
-                sorted_nodes.sort_by_key(|node| node.current_load);
-                
-                // Distribute targets to least loaded nodes
-                let chunk_size = (targets.len() + sorted_nodes.len() - 1) / sorted_nodes.len();
-                
-                for (i, chunk) in targets.chunks(chunk_size).enumerate() {
-                    if let Some(node) = sorted_nodes.get(i % sorted_nodes.len()) {
-                        tasks.push(ScanTask {
-                            id: Uuid::new_v4(),
-                            targets: chunk.to_vec(),
-                            ports: vec![80, 443, 22, 21, 25, 53, 110, 143, 993, 995], // Common ports
-                            assigned_node: Some(node.id),
-                            priority: TaskPriority::Medium,
-                            created_at: SystemTime::now(),
-                            timeout: Duration::from_secs(30),
-                        });
-                    }
-                }
-            }
-            LoadBalancingStrategy::RoundRobin => {
-                // Simple round-robin distribution
-                for (i, target) in targets.iter().enumerate() {
-                    if let Some(node) = nodes.get(i % nodes.len()) {
-                        tasks.push(ScanTask {
-                            id: Uuid::new_v4(),
-                            targets: vec![*target],
-                            ports: vec![80, 443, 22, 21, 25, 53, 110, 143, 993, 995],
-                            assigned_node: Some(node.id),
-                            priority: TaskPriority::Medium,
-                            created_at: SystemTime::now(),
-                            timeout: Duration::from_secs(30),
-                        });
-                    }
-                }
-            }
-            LoadBalancingStrategy::Weighted => {
-                // Weighted distribution based on node capacity
-                let total_capacity: usize = nodes.iter().map(|n| n.capacity).sum();
-                
-                for (i, chunk) in targets.chunks((targets.len() + nodes.len() - 1) / nodes.len()).enumerate() {
-                    if let Some(node) = nodes.get(i % nodes.len()) {
-                        let weight = node.capacity as f64 / total_capacity as f64;
-                        let task_timeout = Duration::from_secs((30.0 / weight) as u64);
-                        
-                        tasks.push(ScanTask {
-                            id: Uuid::new_v4(),
-                            targets: chunk.to_vec(),
-                            ports: vec![80, 443, 22, 21, 25, 53, 110, 143, 993, 995],
-                            assigned_node: Some(node.id),
-                            priority: TaskPriority::Medium,
-                            created_at: SystemTime::now(),
-                            timeout: task_timeout,
-                        });
-                    }
-                }
+
+    pub fn assign_tasks(&self, tasks: &mut [ScanTask], nodes: &[WorkerNode]) {
+        // Simple round-robin assignment
+        for (i, task) in tasks.iter_mut().enumerate() {
+            if !nodes.is_empty() {
+                task.assigned_node = Some(nodes[i % nodes.len()].id);
             }
         }
-        
-        tasks
     }
 }
