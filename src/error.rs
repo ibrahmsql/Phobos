@@ -389,6 +389,9 @@ impl GracefulDegradation {
     }
 }
 
+/// Maximum retry attempts before giving up
+const MAX_RETRY_ATTEMPTS: usize = 5;
+
 /// Scan with automatic fallback and circuit breaker protection
 pub async fn scan_with_fallback(
     target: &str,
@@ -420,10 +423,19 @@ pub async fn scan_with_fallback(
                 let strategy = error_handler.get_recovery_strategy(&e, attempt).await;
                 match strategy {
                     RecoveryStrategy::Retry => {
+                        // Check if we've exceeded max retry attempts
+                        if attempt >= MAX_RETRY_ATTEMPTS {
+                            eprintln!("Max retry attempts ({}) reached for {} scan, switching to fallback", 
+                                     MAX_RETRY_ATTEMPTS, technique.name());
+                            error_handler.record_recovery_attempt().await;
+                            error_handler.record_target_error(target).await;
+                            break; // Switch to fallback techniques
+                        }
+                        
                         attempt += 1;
                         let delay = error_handler.get_retry_delay(attempt);
-                        eprintln!("Retrying {} scan after {}ms delay (attempt {})", 
-                                 technique.name(), delay, attempt);
+                        eprintln!("Retrying {} scan after {}ms delay (attempt {}/{})", 
+                                 technique.name(), delay, attempt, MAX_RETRY_ATTEMPTS);
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         continue;
                     }
@@ -510,6 +522,7 @@ where
 {
     let mut attempt = 0;
     let error_handler = ErrorHandler::default();
+    let effective_max_retries = if max_retries > 0 { max_retries } else { MAX_RETRY_ATTEMPTS };
     
     loop {
         // Check circuit breaker before attempting operation
@@ -531,9 +544,13 @@ where
                 let strategy = error_handler.get_recovery_strategy(&e, attempt).await;
                 match strategy {
                     RecoveryStrategy::Retry => {
-                        if attempt >= max_retries {
+                        if attempt >= effective_max_retries {
+                            eprintln!("Max retry attempts ({}) reached, giving up", effective_max_retries);
+                            error_handler.record_recovery_attempt().await;
+                            error_handler.record_target_error(&format!("retry_operation_{}", attempt)).await;
                             return Err(e);
                         }
+                        eprintln!("Retrying operation (attempt {}/{})...", attempt + 1, effective_max_retries);
                         let delay = error_handler.get_retry_delay(attempt);
                         tokio::time::sleep(Duration::from_millis(delay)).await;
                         attempt += 1;
