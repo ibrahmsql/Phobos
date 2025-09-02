@@ -700,7 +700,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(results) => {
             progress.finish();
             
-            // Show open ports found with enhanced colors
+            // Show open ports found with colors
             let open_ports: Vec<u16> = results.port_results.iter()
                 .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
                 .map(|pr| pr.port)

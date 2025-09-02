@@ -399,7 +399,7 @@ impl ScanEngine {
         Ok((results, stats))
     }
     
-    /// Scan a single port with enhanced diagnostic logging
+    /// Scan a single port with diagnostic logging
     async fn scan_port(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortResult> {
         let start_time = Instant::now();
         
@@ -413,7 +413,7 @@ impl ScanEngine {
             }
         }
         
-        // Enhanced timeout handling
+        // Timeout handling
         let mut retry_count = 0;
         let max_retries = 0;
         

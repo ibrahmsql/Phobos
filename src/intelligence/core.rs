@@ -607,7 +607,7 @@ impl IntelligenceEngine {
                     service_info.insert(port, info);
                 }
                 Ok(Err(e)) => {
-                    // Enhanced error handling with graceful degradation
+                    // Error handling with graceful degradation
                     self.error_handler.handle_service_detection_error(port, &e).await;
                     
                     // Continue with degraded service info if possible

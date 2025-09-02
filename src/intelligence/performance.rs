@@ -301,7 +301,7 @@ pub struct PerformanceMonitor {
 }
 
 impl PerformanceMonitor {
-    /// Create a new performance monitor with enhanced capabilities
+    /// Create a new performance monitor with advanced capabilities
     pub fn new(config: PerformanceConfig) -> Self {
         let metrics = Arc::new(RwLock::new(PerformanceMetrics {
             ports_per_second: 0.0,
@@ -336,7 +336,7 @@ impl PerformanceMonitor {
         // Update network bandwidth calculation
         metrics.network_bandwidth_mbps = metrics.ports_per_second * 0.001; // Estimate based on port scan rate
         
-        // Enhanced competitor comparison ratios
+        // Competitor comparison ratios
         metrics.nmap_speed_ratio = if metrics.ports_per_second > 0.0 {
             metrics.ports_per_second / 100.0 // Nmap baseline: ~100 ports/sec
         } else {

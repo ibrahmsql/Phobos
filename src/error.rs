@@ -104,7 +104,7 @@ pub struct ErrorMetrics {
     pub circuit_breaker_trips: u64,
 }
 
-/// Enhanced error handler for managing recoverable errors with circuit breaker
+/// Error handler for managing recoverable errors with circuit breaker
 pub struct ErrorHandler {
     max_retries: usize,
     retry_delay_ms: u64,
@@ -389,7 +389,7 @@ impl GracefulDegradation {
     }
 }
 
-/// Enhanced scan with automatic fallback and circuit breaker protection
+/// Scan with automatic fallback and circuit breaker protection
 pub async fn scan_with_fallback(
     target: &str,
     ports: &[u16],
@@ -498,7 +498,7 @@ async fn perform_scan_with_technique(
     Ok(vec![result])
 }
 
-/// Enhanced retry mechanism with exponential backoff, jitter, and circuit breaker
+/// Retry mechanism with exponential backoff, jitter, and circuit breaker
 pub async fn retry_with_backoff<F, T, Fut>(
     operation: F,
     max_retries: usize,

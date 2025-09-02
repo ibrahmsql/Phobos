@@ -25,7 +25,7 @@ pub struct PingResult {
     pub error: Option<String>,
 }
 
-/// ICMP pinger for native ping functionality with enhanced features
+/// ICMP pinger for native ping functionality with advanced features
 pub struct IcmpPinger {
     socket: Socket,
     _identifier: u16,

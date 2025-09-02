@@ -161,7 +161,7 @@ impl TcpConnectScanner {
         
         let start_time = std::time::Instant::now();
         
-        // Enhanced connection attempt with retry logic for timeout cases
+        // Connection attempt with retry logic for timeout cases
         let mut result = false;
         let mut attempts = 0;
         let max_attempts = if current_timeout.as_millis() < 500 { 2 } else { 1 };
@@ -196,7 +196,7 @@ impl TcpConnectScanner {
             }
         }
         
-        // Enhanced adaptive learning with better timeout management
+        // Adaptive learning with better timeout management
         let total_response_time = start_time.elapsed().as_millis() as u64;
         
         if result {
@@ -284,7 +284,7 @@ impl UdpScanner {
         }
     }
     
-    /// Perform an enhanced UDP scan on a single port with service-specific probes
+    /// Perform a UDP scan on a single port with service-specific probes
     pub async fn scan_port(&self, target: IpAddr, port: u16) -> crate::Result<bool> {
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
         let target_addr = SocketAddr::new(target, port);
@@ -298,7 +298,7 @@ impl UdpScanner {
         
         let _start_time = std::time::Instant::now();
         
-        // Enhanced UDP scanning with retry logic
+        // UDP scanning with retry logic
         let mut attempts = 0;
         let max_attempts = 2; // UDP needs more attempts due to unreliable nature
         

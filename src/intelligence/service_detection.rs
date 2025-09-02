@@ -146,7 +146,7 @@ impl ServiceDetector for ServiceDetectionEngine {
         if let Some(banner) = self.grab_banner(target).await {
             service_info.banner = Some(banner.clone());
             
-            // Enhanced service identification from banner
+            // Service identification from banner
             service_info.service_name = self.identify_service_from_banner(&banner, target.port());
             service_info.version = self.extract_version_from_banner(&banner);
         }
