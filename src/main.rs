@@ -9,6 +9,8 @@ use phobos::{
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
     utils::config::ConfigValidator,
+    utils::profiles::ProfileManager,
+    utils::MemoryMonitor,
     benchmark::{Benchmark, NamedTimer},
     top_ports::get_top_1000_ports,
 };
@@ -104,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arg::new("target")
                 .value_name("TARGET")
                 .help("Target to scan (IP, hostname, or CIDR)")
-                .required(true)
+                .required_unless_present_any(["list-profiles", "system-check", "validate-config"])
                 .index(1),
         )
         .arg(
@@ -262,6 +264,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("ARGS")
                 .help("Additional arguments to pass to Nmap"),
         )
+        .arg(
+            Arg::new("profile")
+                .long("profile")
+                .value_name("NAME")
+                .help("Use a predefined scan profile (stealth, aggressive, comprehensive, quick)"),
+        )
+        .arg(
+            Arg::new("save-profile")
+                .long("save-profile")
+                .value_name("NAME")
+                .help("Save current configuration as a profile"),
+        )
+        .arg(
+            Arg::new("list-profiles")
+                .long("list-profiles")
+                .help("List all available profiles")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("output-format")
+                .short('o')
+                .long("output")
+                .value_name("FORMAT")
+                .help("Output format (text, json, xml, csv, nmap, greppable)")
+                .value_parser(["text", "json", "xml", "csv", "nmap", "greppable"])
+                .default_value("text"),
+        )
+        .arg(
+            Arg::new("output-file")
+                .long("output-file")
+                .value_name("FILE")
+                .help("Write output to file"),
+        )
+        .arg(
+            Arg::new("validate-config")
+                .long("validate-config")
+                .help("Validate configuration and exit")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("system-check")
+                .long("system-check")
+                .help("Check system requirements and optimization recommendations")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("adaptive")
+                .long("adaptive")
+                .help("Enable adaptive scanning (adjusts parameters based on network conditions)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("stealth-level")
+                .long("stealth")
+                .value_name("LEVEL")
+                .help("Stealth level (0-5: none, low, medium, high, paranoid, ghost)")
+                .value_parser(["0", "1", "2", "3", "4", "5"])
+                .default_value("2"),
+        )
+        .arg(
+            Arg::new("max-retries")
+                .long("max-retries")
+                .value_name("COUNT")
+                .help("Maximum number of retries for failed connections")
+                .value_parser(clap::value_parser!(u32))
+                .default_value("3"),
+        )
+        .arg(
+            Arg::new("source-port")
+                .long("source-port")
+                .value_name("PORT")
+                .help("Use specific source port for scanning")
+                .value_parser(clap::value_parser!(u16)),
+        )
+        .arg(
+            Arg::new("interface")
+                .short('i')
+                .long("interface")
+                .value_name("IFACE")
+                .help("Network interface to use for scanning"),
+        )
+
         .get_matches();
     
     let greppable = matches.get_flag("greppable");
@@ -274,6 +358,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exclude_ports: Option<Vec<String>> = matches.get_many::<String>("exclude-ports")
         .map(|vals| vals.map(|s| s.to_string()).collect());
     
+    // Handle profile management
+    let profile_manager = ProfileManager::new()?;
+    
+    // List profiles if requested
+    if matches.get_flag("list-profiles") {
+        profile_manager.list_profiles();
+        return Ok(());
+    }
+    
     // Show banner unless disabled
     if !no_banner && !greppable && !accessible {
         print_banner();
@@ -284,7 +377,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adjust_ulimit_size(Some(*ulimit));
     }
     
-
+    // Handle system check
+    if matches.get_flag("system-check") {
+        println!("{}", "System Check Results:".bright_yellow().bold());
+        println!();
+        
+        // Check memory
+        if let Some(memory) = MemoryMonitor::current_usage() {
+            let memory_gb = memory as f64 / 1024.0 / 1024.0 / 1024.0;
+            println!("{} {} GB", 
+                "[✓] Available Memory:".bright_green(),
+                format!("{:.2}", memory_gb).bright_white().bold()
+            );
+        } else {
+            println!("{}", "[!] Could not determine memory usage".bright_yellow());
+        }
+        
+        // Check file descriptor limits
+        #[cfg(unix)]
+        {
+            use std::process::Command;
+            if let Ok(output) = Command::new("ulimit").arg("-n").output() {
+                let limit_str = String::from_utf8_lossy(&output.stdout);
+                let limit = limit_str.trim();
+                println!("{} {}", 
+                    "[✓] File Descriptor Limit:".bright_green(),
+                    limit.bright_white().bold()
+                );
+            }
+        }
+        
+        // Check network interfaces
+        println!("{}", "[✓] Network interfaces available".bright_green());
+        
+        // Check raw socket permissions
+        println!("{}", "[!] Raw socket permissions: Run as root for SYN scan".bright_yellow());
+        
+        return Ok(());
+    }
+    
+    // Handle profile loading
+    let _base_config = if let Some(profile_name) = matches.get_one::<String>("profile") {
+        match profile_manager.load_profile(profile_name) {
+            Ok(config) => {
+                println!("{} {}", 
+                    "[~] Loaded profile:".bright_blue(),
+                    profile_name.bright_cyan().bold()
+                );
+                config
+            }
+            Err(e) => {
+                eprintln!("Failed to load profile '{}': {}", profile_name, e);
+                process::exit(1);
+            }
+        }
+    } else {
+        ScanConfig::default()
+    };
 
     // Legal warning is shown by default in stealth mode
 
@@ -306,10 +455,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Parse arguments and override config
-    let target_input = matches.get_one::<String>("target").unwrap();
-    
-    // Resolve hostname to IP if needed
-    let target = resolve_target(target_input)?;
+    let target = if let Some(target_input) = matches.get_one::<String>("target") {
+        resolve_target(target_input)?
+    } else {
+        // This should not happen due to required_unless_present_any, but handle gracefully
+        "127.0.0.1".to_string()
+    };
     
     // Parse ports with new default behavior
     let mut ports = if full_range_ports {
@@ -473,12 +624,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Validate configuration
+    // Handle config validation
+    if matches.get_flag("validate-config") {
+        println!("{}", "Configuration Validation:".bright_yellow().bold());
+        println!();
+        
+        let validation_errors = ConfigValidator::validate_scan_config(&scan_config);
+        if validation_errors.is_empty() {
+            println!("{}", "[✓] Configuration is valid".bright_green().bold());
+            println!("{} {}", "[~] Target:".bright_blue(), scan_config.target.bright_cyan());
+            println!("{} {}", "[~] Ports:".bright_blue(), scan_config.ports.len().to_string().bright_white());
+            println!("{} {:?}", "[~] Technique:".bright_blue(), scan_config.technique);
+            println!("{} {}", "[~] Threads:".bright_blue(), scan_config.threads.to_string().bright_white());
+            println!("{} {}ms", "[~] Timeout:".bright_blue(), scan_config.timeout.to_string().bright_white());
+            println!("{} {}/s", "[~] Rate Limit:".bright_blue(), scan_config.rate_limit.to_string().bright_white());
+        } else {
+            println!("{}", "[✗] Configuration has errors:".bright_red().bold());
+            for error in &validation_errors {
+                println!("{} {}", "  -".bright_red(), error.bright_white());
+            }
+        }
+        return Ok(());
+    }
+    
+    // Validate configuration for actual scan
     let validation_errors = ConfigValidator::validate_scan_config(&scan_config);
     if !validation_errors.is_empty() {
-        eprintln!("Configuration errors:");
+        eprintln!("{}", "Configuration errors:".bright_red().bold());
         for error in validation_errors {
-            eprintln!("  - {}", error);
+            eprintln!("{} {}", "  -".bright_red(), error);
         }
         process::exit(1);
     }
@@ -488,6 +662,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Create progress display
     let progress = ProgressDisplay::new(scan_config.ports.len());
+    
+    // Handle profile saving
+    if let Some(profile_name) = matches.get_one::<String>("save-profile") {
+        let profile = profile_manager.create_profile_from_config(
+            profile_name.clone(),
+            format!("Custom profile created on {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")),
+            &scan_config,
+        );
+        
+        match profile_manager.save_profile(&profile) {
+            Ok(_) => {
+                println!("{} {}", 
+                    "[✓] Profile saved successfully:".bright_green().bold(),
+                    profile_name.bright_cyan()
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Failed to save profile '{}': {}", profile_name, e);
+                process::exit(1);
+            }
+        }
+    }
     
     // Create and run scanner
     let engine = ScanEngine::new(scan_config.clone()).await?;

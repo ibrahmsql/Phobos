@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod benchmarks {
     use crate::intelligence::*;
+    use crate::intelligence::distributed::FaultToleranceConfig;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
     
@@ -47,6 +48,15 @@ mod benchmarks {
         let coordinator = DistributedCoordinator::new(
             Duration::from_secs(1),
             thread_pool,
+            "127.0.0.1:8080".parse().unwrap(),
+            FaultToleranceConfig {
+                max_failures: 3,
+                failure_window: Duration::from_secs(60),
+                recovery_timeout: Duration::from_secs(30),
+                health_check_interval: Duration::from_secs(10),
+                enable_auto_recovery: true,
+                backup_nodes: 2,
+            },
         ).await.unwrap();
         
         let targets = vec![

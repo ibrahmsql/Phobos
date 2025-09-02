@@ -155,33 +155,64 @@ impl TcpConnectScanner {
     pub async fn scan_port(&self, target: IpAddr, port: u16) -> crate::Result<bool> {
         let addr = SocketAddr::new(target, port);
         
-        // Use adaptive timeout
-        let current_timeout = Duration::from_millis(
-            self.adaptive_timeout.load(std::sync::atomic::Ordering::Relaxed)
-        );
+        // Use adaptive timeout with minimum safety threshold
+        let base_timeout = self.adaptive_timeout.load(std::sync::atomic::Ordering::Relaxed);
+        let current_timeout = Duration::from_millis(std::cmp::max(base_timeout, 200)); // Minimum 200ms
         
         let start_time = std::time::Instant::now();
         
-        // Fast connection attempt with optimized performance
-        let result = match tokio::time::timeout(current_timeout, tokio::net::TcpStream::connect(addr)).await {
-            Ok(Ok(stream)) => {
-                // Connection successful - close quickly
-                drop(stream);
-                true
-            },
-            Ok(Err(_)) => false,      // Connection failed - port is closed
-            Err(_) => false,          // Timeout - consider port closed/filtered
-        };
+        // Enhanced connection attempt with retry logic for timeout cases
+        let mut result = false;
+        let mut attempts = 0;
+        let max_attempts = if current_timeout.as_millis() < 500 { 2 } else { 1 };
         
-        // Adaptive learning - adjust timeout based on response time
-        let response_time = start_time.elapsed().as_millis() as u64;
-        if result && response_time < 100 {
-            // Very fast response - decrease timeout slightly
-            let new_timeout = std::cmp::max(current_timeout.as_millis() as u64 - 50, 1000);
-            self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
-        } else if !result && response_time >= current_timeout.as_millis() as u64 {
-            // Timeout occurred - increase timeout
-            let new_timeout = std::cmp::min(current_timeout.as_millis() as u64 + 200, 5000);
+        while attempts < max_attempts && !result {
+            let attempt_timeout = if attempts > 0 {
+                // Second attempt gets longer timeout
+                Duration::from_millis(current_timeout.as_millis() as u64 * 2)
+            } else {
+                current_timeout
+            };
+            
+            match tokio::time::timeout(attempt_timeout, tokio::net::TcpStream::connect(addr)).await {
+                Ok(Ok(stream)) => {
+                    // Connection successful - close quickly
+                    drop(stream);
+                    result = true;
+                    break;
+                },
+                Ok(Err(_)) => {
+                    // Connection failed - port is definitely closed
+                    break;
+                }
+                Err(_) => {
+                    // Timeout - try again if we have attempts left
+                    attempts += 1;
+                    if attempts < max_attempts {
+                        // Small delay before retry
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }
+            }
+        }
+        
+        // Enhanced adaptive learning with better timeout management
+        let total_response_time = start_time.elapsed().as_millis() as u64;
+        
+        if result {
+            // Successful connection - optimize timeout based on actual response time
+            if total_response_time < 50 {
+                // Very fast response - can decrease timeout slightly
+                let new_timeout = std::cmp::max(base_timeout.saturating_sub(25), 200);
+                self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
+            } else if total_response_time > current_timeout.as_millis() as u64 {
+                // Response was slower than expected - increase timeout
+                let new_timeout = std::cmp::min(base_timeout + 100, 3000);
+                self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
+            }
+        } else if attempts >= max_attempts {
+            // Multiple timeouts occurred - significantly increase timeout
+            let new_timeout = std::cmp::min(base_timeout + 300, 5000);
             self.adaptive_timeout.store(new_timeout, std::sync::atomic::Ordering::Relaxed);
         }
         
@@ -226,41 +257,210 @@ impl Clone for TcpConnectScanner {
 /// UDP scanner for UDP port scanning
 pub struct UdpScanner {
     timeout: Duration,
+    /// Service-specific probes for better UDP detection
+    service_probes: std::collections::HashMap<u16, Vec<u8>>,
+    /// ICMP socket for unreachable detection
+    icmp_socket: Option<RawSocket>,
 }
 
 impl UdpScanner {
     pub fn new(timeout: Duration) -> Self {
-        Self { timeout }
+        let mut service_probes = std::collections::HashMap::new();
+        
+        // Add service-specific UDP probes
+        service_probes.insert(53, b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01".to_vec()); // DNS query
+        service_probes.insert(123, b"\x1b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00".to_vec()); // NTP
+        service_probes.insert(161, b"\x30\x26\x02\x01\x01\x04\x06\x70\x75\x62\x6c\x69\x63\xa0\x19\x02\x04\x00\x00\x00\x00\x02\x01\x00\x02\x01\x00\x30\x0b\x30\x09\x06\x05\x2b\x06\x01\x02\x01\x05\x00".to_vec()); // SNMP
+        service_probes.insert(69, b"\x00\x01example.txt\x00netascii\x00".to_vec()); // TFTP
+        service_probes.insert(514, b"<30>Jan 1 00:00:00 test: UDP probe\n".to_vec()); // Syslog
+        service_probes.insert(1900, b"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nST: upnp:rootdevice\r\nMX: 3\r\n\r\n".to_vec()); // UPnP SSDP
+        
+        let icmp_socket = RawSocket::new_icmp().ok();
+        
+        Self { 
+            timeout,
+            service_probes,
+            icmp_socket,
+        }
     }
     
-    /// Perform a UDP scan on a single port
+    /// Perform an enhanced UDP scan on a single port with service-specific probes
     pub async fn scan_port(&self, target: IpAddr, port: u16) -> crate::Result<bool> {
         let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
         let target_addr = SocketAddr::new(target, port);
         
         let socket = UdpSocket::bind(local_addr).await.map_err(|e| ScanError::NetworkError(e.to_string()))?;
         
-        // Send a UDP packet
-        let probe_data = b"\x00\x00\x00\x00"; // Simple probe
+        // Get service-specific probe or use generic probe
+        let probe_data = self.service_probes.get(&port)
+            .map(|p| p.as_slice())
+            .unwrap_or(b"\x00\x00\x00\x00"); // Generic probe
         
-        match tokio::time::timeout(
-            self.timeout,
-            socket.send_to(probe_data, target_addr)
-        ).await {
-            Ok(Ok(_)) => {
-                // Try to receive a response
-                let mut buf = [0u8; 1024];
+        let _start_time = std::time::Instant::now();
+        
+        // Enhanced UDP scanning with retry logic
+        let mut attempts = 0;
+        let max_attempts = 2; // UDP needs more attempts due to unreliable nature
+        
+        while attempts < max_attempts {
+            // Send UDP probe with timeout
+            let send_result = tokio::time::timeout(
+                self.timeout,
+                socket.send_to(probe_data, target_addr)
+            ).await;
+            
+            match send_result {
+                Ok(Ok(_)) => {
+                    // Wait for UDP response or ICMP unreachable
+                    let (udp_response, icmp_unreachable) = self.wait_for_response(&socket, target, port).await;
+                    
+                    if udp_response {
+                        return Ok(true);  // Got UDP response - port is definitely open
+                    } else if icmp_unreachable {
+                        return Ok(false); // Got ICMP unreachable - port is closed
+                    }
+                    // No response on this attempt - try again if we have attempts left
+                }
+                Ok(Err(_)) => return Ok(false),    // Send failed - port likely closed
+                Err(_) => {}
+            }
+            
+            attempts += 1;
+            if attempts < max_attempts {
+                // Small delay before retry
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+        
+        // No definitive response after all attempts
+        // For common services, assume closed if no response
+        // For other ports, assume open|filtered (conservative approach)
+        match port {
+            53 | 123 | 161 | 514 | 69 | 137 | 138 | 139 => Ok(false), // These usually respond if open
+            _ => Ok(true), // Other ports might be open but not responding
+        }
+    }
+    
+    /// Wait for UDP response or ICMP unreachable message
+    async fn wait_for_response(&self, socket: &UdpSocket, target: IpAddr, port: u16) -> (bool, bool) {
+        let mut udp_response = false;
+        let mut icmp_unreachable = false;
+        
+        // Create tasks for UDP response and ICMP monitoring
+        let udp_task = async {
+            let mut buf = [0u8; 1024];
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                socket.recv_from(&mut buf)
+            ).await {
+                Ok(Ok((len, addr))) => {
+                    // Validate response is from target
+                    if addr.ip() == target && len > 0 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+            false
+        };
+        
+        let icmp_task = async {
+            if let Some(ref icmp_socket) = self.icmp_socket {
+                let mut buf = [0u8; 1500];
                 match tokio::time::timeout(
-                    Duration::from_millis(100),
-                    socket.recv_from(&mut buf)
+                    Duration::from_millis(1000),
+                    async {
+                        loop {
+                            if let Ok((len, _)) = icmp_socket.recv_from(&mut buf) {
+                                if self.is_icmp_unreachable(&buf[..len], target, port) {
+                                    return true;
+                                }
+                            }
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    }
                 ).await {
-                    Ok(Ok(_)) => Ok(true),  // Got response - port is open
-                    Ok(Err(_)) => Ok(false), // Error receiving - likely closed
-                    Err(_) => Ok(true),     // Timeout - assume open (UDP is stateless)
+                    Ok(result) => result,
+                    Err(_) => false,
+                }
+            } else {
+                false
+            }
+        };
+        
+        // Race between UDP response and ICMP unreachable
+        tokio::select! {
+            udp_result = udp_task => {
+                udp_response = udp_result;
+            }
+            icmp_result = icmp_task => {
+                icmp_unreachable = icmp_result;
+            }
+        }
+        
+        (udp_response, icmp_unreachable)
+    }
+    
+    /// Check if ICMP packet indicates port unreachable
+    fn is_icmp_unreachable(&self, packet: &[u8], target: IpAddr, port: u16) -> bool {
+        if packet.len() < 28 { // Minimum ICMP + IP header size
+            return false;
+        }
+        
+        // Parse ICMP header (simplified)
+        let icmp_type = packet[20]; // ICMP type (after IP header)
+        let icmp_code = packet[21]; // ICMP code
+        
+        // Check for Destination Unreachable (Type 3) with Port Unreachable (Code 3)
+        if icmp_type == 3 && icmp_code == 3 {
+            // Extract original packet info from ICMP payload
+            if packet.len() >= 48 {
+                // Original IP header starts at offset 28
+                let orig_dest_ip = u32::from_be_bytes([
+                    packet[44], packet[45], packet[46], packet[47]
+                ]);
+                let orig_dest_port = u16::from_be_bytes([packet[50], packet[51]]);
+                
+                // Check if this unreachable is for our target and port
+                if let IpAddr::V4(target_v4) = target {
+                    return u32::from(target_v4) == orig_dest_ip && orig_dest_port == port;
                 }
             }
-            Ok(Err(_)) => Ok(false),    // Send failed
-            Err(_) => Ok(false),        // Timeout
+        }
+        
+        false
+    }
+    
+    /// High-performance batch UDP scanning
+    pub async fn scan_ports_batch(&self, target: IpAddr, ports: &[u16]) -> crate::Result<Vec<(u16, bool)>> {
+        let mut tasks = Vec::new();
+        
+        for &port in ports {
+            let scanner = self.clone();
+            let task = tokio::spawn(async move {
+                let result = scanner.scan_port(target, port).await.unwrap_or(false);
+                (port, result)
+            });
+            tasks.push(task);
+        }
+        
+        let mut results = Vec::new();
+        for task in tasks {
+            if let Ok(result) = task.await {
+                results.push(result);
+            }
+        }
+        
+        Ok(results)
+    }
+}
+
+impl Clone for UdpScanner {
+    fn clone(&self) -> Self {
+        Self {
+            timeout: self.timeout,
+            service_probes: self.service_probes.clone(),
+            icmp_socket: None, // Don't clone the socket, create new if needed
         }
     }
 }

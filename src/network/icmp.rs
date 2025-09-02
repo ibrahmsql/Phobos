@@ -9,6 +9,10 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::{Packet, MutablePacket};
 use socket2::{Domain, Protocol, Socket, Type};
 use rand::Rng;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use crate::ScanError;
 
 /// ICMP ping result
 #[derive(Debug, Clone)]
@@ -16,65 +20,143 @@ pub struct PingResult {
     pub target: IpAddr,
     pub success: bool,
     pub response_time: Option<Duration>,
+    pub rtt: Duration,
     pub ttl: Option<u8>,
     pub error: Option<String>,
 }
 
-/// Native ICMP ping implementation
+/// ICMP pinger for native ping functionality with enhanced features
 pub struct IcmpPinger {
     socket: Socket,
-    timeout_duration: Duration,
+    _identifier: u16,
+    _sequence: u16,
+    /// Cache for tracking sent packets
+    _pending_pings: Arc<Mutex<HashMap<u16, (Ipv4Addr, Instant)>>>,
+    /// Statistics tracking
+    _stats: Arc<Mutex<IcmpStats>>,
 }
+
+/// ICMP statistics for performance monitoring
+#[derive(Debug, Clone, Default)]
+pub struct IcmpStats {
+    pub packets_sent: u64,
+    pub packets_received: u64,
+    pub packets_lost: u64,
+    pub min_rtt: Duration,
+    pub max_rtt: Duration,
+    pub avg_rtt: Duration,
+    pub total_rtt: Duration,
+}
+
+impl IcmpStats {
+    pub fn new() -> Self {
+        Self {
+            min_rtt: Duration::from_secs(u64::MAX),
+            max_rtt: Duration::from_secs(0),
+            ..Default::default()
+        }
+    }
+    
+    pub fn update_rtt(&mut self, rtt: Duration) {
+        self.packets_received += 1;
+        self.total_rtt += rtt;
+        
+        if rtt < self.min_rtt {
+            self.min_rtt = rtt;
+        }
+        if rtt > self.max_rtt {
+            self.max_rtt = rtt;
+        }
+        
+        if self.packets_received > 0 {
+            self.avg_rtt = self.total_rtt / self.packets_received as u32;
+        }
+    }
+    
+    pub fn packet_lost(&mut self) {
+        self.packets_lost += 1;
+    }
+    
+    pub fn packet_sent(&mut self) {
+        self.packets_sent += 1;
+    }
+    
+    pub fn loss_percentage(&self) -> f64 {
+        if self.packets_sent == 0 {
+            return 0.0;
+        }
+        (self.packets_lost as f64 / self.packets_sent as f64) * 100.0
+    }
+}
+
+/// Native ICMP ping implementation
 
 impl IcmpPinger {
     /// Create a new ICMP pinger
-    pub fn new(timeout_ms: u64) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))?;
-        socket.set_nonblocking(true)?;
+    pub fn new() -> crate::Result<Self> {
+        let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    ScanError::PermissionError("Permission denied for ICMP socket".to_string())
+                } else {
+                    ScanError::NetworkError(e.to_string())
+                }
+            })?;
+        
+        socket.set_nonblocking(true).map_err(|e| ScanError::NetworkError(e.to_string()))?;
+        
+        let identifier = rand::thread_rng().gen::<u16>();
         
         Ok(Self {
             socket,
-            timeout_duration: Duration::from_millis(timeout_ms),
+            _identifier: identifier,
+            _sequence: 0,
+            _pending_pings: Arc::new(Mutex::new(HashMap::new())),
+            _stats: Arc::new(Mutex::new(IcmpStats::new())),
         })
     }
     
     /// Ping a single host
-    pub async fn ping(&self, target: Ipv4Addr) -> PingResult {
+    pub async fn ping(&self, target: Ipv4Addr, timeout_duration: Duration) -> PingResult {
         let _start_time = Instant::now();
         
         match self.send_ping(target).await {
             Ok(_) => {
-                match timeout(self.timeout_duration, self.wait_for_reply(target)).await {
+                match timeout(timeout_duration, self.wait_for_reply(target)).await {
                     Ok(Ok(response_time)) => PingResult {
-                        target: IpAddr::V4(target),
-                        success: true,
-                        response_time: Some(response_time),
-                        ttl: Some(64), // Default TTL
-                        error: None,
-                    },
-                    Ok(Err(e)) => PingResult {
-                        target: IpAddr::V4(target),
-                        success: false,
-                        response_time: None,
-                        ttl: None,
-                        error: Some(e.to_string()),
-                    },
-                    Err(_) => PingResult {
-                        target: IpAddr::V4(target),
-                        success: false,
-                        response_time: None,
-                        ttl: None,
-                        error: Some("Timeout".to_string()),
-                    },
+                         target: IpAddr::V4(target),
+                         success: true,
+                         response_time: Some(response_time),
+                         rtt: response_time,
+                         ttl: None,
+                         error: None,
+                     },
+                     Ok(Err(e)) => PingResult {
+                         target: IpAddr::V4(target),
+                         success: false,
+                         response_time: None,
+                         rtt: Duration::from_secs(0),
+                         ttl: None,
+                         error: Some(e.to_string()),
+                     },
+                     Err(_) => PingResult {
+                         target: IpAddr::V4(target),
+                         success: false,
+                         response_time: None,
+                         rtt: Duration::from_secs(0),
+                         ttl: None,
+                         error: Some("Timeout".to_string()),
+                     },
                 }
             }
             Err(e) => PingResult {
-                target: IpAddr::V4(target),
-                success: false,
-                response_time: None,
-                ttl: None,
-                error: Some(e.to_string()),
-            },
+                 target: IpAddr::V4(target),
+                 success: false,
+                 response_time: None,
+                 rtt: Duration::from_secs(0),
+                 ttl: None,
+                 error: Some(e.to_string()),
+             },
         }
     }
     
@@ -186,15 +268,17 @@ impl IcmpPinger {
 
 /// High-level ping function
 pub async fn ping_host(target: Ipv4Addr, timeout_ms: u64) -> PingResult {
-    match IcmpPinger::new(timeout_ms) {
-        Ok(pinger) => pinger.ping(target).await,
+    let timeout_duration = Duration::from_millis(timeout_ms);
+    match IcmpPinger::new() {
+        Ok(pinger) => pinger.ping(target, timeout_duration).await,
         Err(e) => PingResult {
-            target: IpAddr::V4(target),
-            success: false,
-            response_time: None,
-            ttl: None,
-            error: Some(format!("Failed to create pinger: {}", e)),
-        },
+             target: IpAddr::V4(target),
+             success: false,
+             response_time: None,
+             rtt: Duration::from_secs(0),
+             ttl: None,
+             error: Some(format!("Failed to create pinger: {}", e)),
+         },
     }
 }
 

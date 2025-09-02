@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
+use openssl::x509::X509;
+use regex::Regex;
+use lazy_static::lazy_static;
 
 use super::core::IntelligenceResult;
 use super::performance::{UltraFastThreadPool, MemoryPool};
@@ -214,23 +218,33 @@ impl ServiceDetectionEngine {
         }
     }
     
-    /// Extract version information from banner
+    /// Extract version information from banner using optimized regex patterns
     pub fn extract_version_from_banner(&self, banner: &str) -> Option<String> {
-        // Common version patterns
-        let patterns = [
-            r"SSH-[\d\.]+",
-            r"Apache/[\d\.]+",
-            r"nginx/[\d\.]+",
-            r"MySQL [\d\.]+",
-            r"PostgreSQL [\d\.]+",
-            r"Redis server v=[\d\.]+",
-            r"MongoDB [\d\.]+",
-        ];
+        // Pre-compiled regex patterns for better performance
+        lazy_static::lazy_static! {
+            static ref VERSION_PATTERNS: Vec<Regex> = vec![
+                Regex::new(r"SSH-([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Apache/([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"nginx/([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"MySQL ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"PostgreSQL ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Redis server v=([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"MongoDB ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"OpenSSH_([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Microsoft-IIS/([\d\.]+)").unwrap(),
+                Regex::new(r"vsftpd ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"ProFTPD ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Postfix ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Dovecot ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"Version ([\d\.]+[\w\-]*)").unwrap(),
+                Regex::new(r"v([\d\.]+[\w\-]*)").unwrap(),
+            ];
+        }
         
-        for pattern in &patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if let Some(mat) = re.find(banner) {
-                    return Some(mat.as_str().to_string());
+        for regex in VERSION_PATTERNS.iter() {
+            if let Some(captures) = regex.captures(banner) {
+                if let Some(version) = captures.get(1) {
+                    return Some(version.as_str().to_string());
                 }
             }
         }
@@ -317,9 +331,19 @@ impl BannerGrabber {
                 _ => {
                     // If no immediate response, try sending common probes
                     let probes: &[&[u8]] = &[
-                        b"GET / HTTP/1.0\r\n\r\n",  // HTTP probe
+                        b"GET / HTTP/1.1\r\nHost: localhost\r\nUser-Agent: Phobos/1.1.1\r\n\r\n",  // HTTP probe
                         b"\r\n",                     // Generic probe
                         b"HELP\r\n",                 // Help command
+                        b"QUIT\r\n",                 // Quit command
+                        b"OPTIONS / HTTP/1.1\r\nHost: localhost\r\n\r\n", // HTTP OPTIONS
+                        b"\x16\x03\x01\x00\x01\x01", // SSL/TLS ClientHello probe
+                        b"SSH-2.0-Phobos\r\n",       // SSH probe
+                        b"USER anonymous\r\n",       // FTP probe
+                        b"EHLO localhost\r\n",       // SMTP probe
+                        b"* OK IMAP4rev1\r\n",       // IMAP probe
+                        b"+OK POP3\r\n",             // POP3 probe
+                        b"INFO\r\n",                 // Redis probe
+                        b"ping\r\n",                 // Generic ping
                     ];
                     
                     for probe in probes {
@@ -361,18 +385,44 @@ impl SSLAnalyzer {
         Self
     }
     
-    /// Fast SSL analysis without full handshake
+    /// Fast SSL analysis with real handshake
     pub async fn analyze_fast(&self, target: SocketAddr, timeout_duration: Duration) -> Option<SSLInfo> {
         let result = timeout(timeout_duration, async {
-            // Quick SSL probe to get basic info
-            let _stream = TcpStream::connect(target).await.ok()?;
+            // Connect to the target
+            let stream = TcpStream::connect(target).await.ok()?;
             
-            // For now, return basic SSL info
-            // In a full implementation, this would do a partial SSL handshake
+            // Create SSL connector with minimal verification for speed
+            let mut connector_builder = SslConnector::builder(SslMethod::tls()).ok()?;
+            connector_builder.set_verify(SslVerifyMode::NONE);
+            let connector = connector_builder.build();
+            
+            // Perform SSL handshake
+            let domain = target.ip().to_string();
+            let ssl_stream = match connector.connect(&domain, stream.into_std().ok()?) {
+                Ok(stream) => stream,
+                Err(_) => return None,
+            };
+            
+            // Extract SSL information
+            let ssl = ssl_stream.ssl();
+            let version = ssl.version_str().to_string();
+            let cipher = ssl.current_cipher()
+                .map(|c| c.name().to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+            
+            // Extract certificate information
+            let certificate = ssl.peer_certificate()
+                .and_then(|cert| {
+                    cert.subject_name().entries()
+                        .find(|entry| entry.object().nid().short_name().ok() == Some("CN"))
+                        .and_then(|entry| entry.data().as_utf8().ok())
+                        .map(|data| data.to_string())
+                });
+            
             Some(SSLInfo {
-                version: "TLS 1.2".to_string(),
-                cipher: "AES256-GCM-SHA384".to_string(),
-                certificate: None,
+                version,
+                cipher,
+                certificate,
             })
         }).await;
         
@@ -403,6 +453,13 @@ impl VulnerabilityScanner {
                             description: "OpenSSH username enumeration vulnerability".to_string(),
                         });
                     }
+                    if version.contains("OpenSSH_6.") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2016-0777".to_string(),
+                            severity: "High".to_string(),
+                            description: "OpenSSH client information leak vulnerability".to_string(),
+                        });
+                    }
                 }
             }
             "http" | "https" => {
@@ -414,13 +471,87 @@ impl VulnerabilityScanner {
                             description: "Apache HTTP Server out-of-bounds read vulnerability".to_string(),
                         });
                     }
+                    if banner.contains("nginx/1.1") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2013-2028".to_string(),
+                            severity: "Medium".to_string(),
+                            description: "Nginx stack-based buffer overflow vulnerability".to_string(),
+                        });
+                    }
+                    if banner.contains("Microsoft-IIS/6.0") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2017-7269".to_string(),
+                            severity: "Critical".to_string(),
+                            description: "IIS 6.0 WebDAV remote code execution vulnerability".to_string(),
+                        });
+                    }
                 }
             }
             "mysql" => {
+                if let Some(version) = &service.version {
+                    if version.starts_with("5.7") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2019-2740".to_string(),
+                            severity: "Medium".to_string(),
+                            description: "MySQL Server privilege escalation vulnerability".to_string(),
+                        });
+                    }
+                    if version.starts_with("5.6") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2018-2767".to_string(),
+                            severity: "High".to_string(),
+                            description: "MySQL Server denial of service vulnerability".to_string(),
+                        });
+                    }
+                }
+            }
+            "postgresql" => {
+                if let Some(version) = &service.version {
+                    if version.starts_with("9.") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2018-1058".to_string(),
+                            severity: "High".to_string(),
+                            description: "PostgreSQL privilege escalation vulnerability".to_string(),
+                        });
+                    }
+                }
+            }
+            "ftp" => {
+                if let Some(banner) = &service.banner {
+                    if banner.contains("vsftpd 2.3.4") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2011-2523".to_string(),
+                            severity: "Critical".to_string(),
+                            description: "vsftpd 2.3.4 backdoor command execution".to_string(),
+                        });
+                    }
+                }
+            }
+            "smtp" => {
+                if let Some(banner) = &service.banner {
+                    if banner.contains("Postfix") {
+                        vulnerabilities.push(Vulnerability {
+                            cve_id: "CVE-2020-12063".to_string(),
+                            severity: "Medium".to_string(),
+                            description: "Postfix SMTP smuggling vulnerability".to_string(),
+                        });
+                    }
+                }
+            }
+            "redis" => {
+                // Redis often runs without authentication
                 vulnerabilities.push(Vulnerability {
-                    cve_id: "CVE-2019-2740".to_string(),
-                    severity: "Medium".to_string(),
-                    description: "MySQL Server privilege escalation vulnerability".to_string(),
+                    cve_id: "CVE-2022-0543".to_string(),
+                    severity: "Critical".to_string(),
+                    description: "Redis Lua sandbox escape vulnerability".to_string(),
+                });
+            }
+            "mongodb" => {
+                // MongoDB often runs without authentication
+                vulnerabilities.push(Vulnerability {
+                    cve_id: "CVE-2021-20329".to_string(),
+                    severity: "High".to_string(),
+                    description: "MongoDB Server-Side Request Forgery vulnerability".to_string(),
                 });
             }
             _ => {}
