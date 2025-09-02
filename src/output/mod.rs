@@ -6,7 +6,13 @@ use crate::network::{PortState, Protocol};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, Write};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, RwLock};
 use chrono::{DateTime, Utc};
+use quick_xml::Writer;
+use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
+use std::io::Cursor;
 
 /// Output format options
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -16,6 +22,54 @@ pub enum OutputFormat {
     Xml,
     Csv,
     Nmap,
+    Greppable,
+    NmapXml,
+}
+
+/// Real-time notification types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NotificationType {
+    PortFound { target: String, port: u16, service: Option<String> },
+    ScanProgress { target: String, completed: usize, total: usize },
+    ScanComplete { target: String, duration: Duration, open_ports: usize },
+    Error { target: String, error: String },
+    ServiceDetected { target: String, port: u16, service: String, version: Option<String> },
+    VulnerabilityFound { target: String, port: u16, vulnerability: String },
+}
+
+/// Real-time notification manager
+#[derive(Debug, Clone)]
+pub struct NotificationManager {
+    sender: broadcast::Sender<NotificationType>,
+    enabled: bool,
+}
+
+impl NotificationManager {
+    pub fn new(buffer_size: usize) -> Self {
+        let (sender, _) = broadcast::channel(buffer_size);
+        Self {
+            sender,
+            enabled: true,
+        }
+    }
+    
+    pub fn subscribe(&self) -> broadcast::Receiver<NotificationType> {
+        self.sender.subscribe()
+    }
+    
+    pub async fn notify(&self, notification: NotificationType) {
+        if self.enabled {
+            let _ = self.sender.send(notification);
+        }
+    }
+    
+    pub fn enable(&mut self) {
+        self.enabled = true;
+    }
+    
+    pub fn disable(&mut self) {
+        self.enabled = false;
+    }
 }
 
 impl std::str::FromStr for OutputFormat {
@@ -28,6 +82,8 @@ impl std::str::FromStr for OutputFormat {
             "xml" => Ok(OutputFormat::Xml),
             "csv" => Ok(OutputFormat::Csv),
             "nmap" => Ok(OutputFormat::Nmap),
+            "greppable" | "grep" => Ok(OutputFormat::Greppable),
+            "nmapxml" | "nmap-xml" => Ok(OutputFormat::NmapXml),
             _ => Err(format!("Unknown output format: {}", s)),
         }
     }
@@ -75,6 +131,8 @@ impl OutputManager {
             OutputFormat::Xml => self.format_xml(results),
             OutputFormat::Csv => self.format_csv(results),
             OutputFormat::Nmap => self.format_nmap(results),
+            OutputFormat::Greppable => self.format_greppable(results),
+            OutputFormat::NmapXml => self.format_nmap_xml(results)?,
         };
         
         match &self.config.file {
@@ -286,6 +344,174 @@ impl OutputManager {
         
         output.push_str(&format!("\n# Scan rate: {:.2} ports/sec\n", results.scan_rate()));
         output
+    }
+    
+    /// Format results in greppable format
+    fn format_greppable(&self, results: &ScanResult) -> String {
+        let mut output = String::new();
+        
+        for port_result in &results.port_results {
+            if matches!(port_result.state, crate::network::PortState::Open) {
+                let protocol = match port_result.protocol {
+                    Protocol::Tcp => "tcp",
+                    Protocol::Udp => "udp",
+                    _ => "unknown",
+                };
+                let service = port_result.service.as_deref().unwrap_or("unknown");
+                output.push_str(&format!(
+                    "Host: {} () Ports: {}/{}/open/{}//{}/\n",
+                    results.target,
+                    port_result.port,
+                    protocol,
+                    protocol,
+                    service
+                ));
+            }
+        }
+        
+        output
+    }
+    
+    /// Format results in Nmap XML format
+    fn format_nmap_xml(&self, results: &ScanResult) -> io::Result<String> {
+        let mut buffer = Vec::new();
+        let mut writer = Writer::new(Cursor::new(&mut buffer));
+        
+        // XML declaration
+        writer.write_event(Event::Decl(quick_xml::events::BytesDecl::new("1.0", Some("UTF-8"), None)))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Root nmaprun element
+        let mut nmaprun = BytesStart::new("nmaprun");
+        nmaprun.push_attribute(("scanner", "phobos"));
+        nmaprun.push_attribute(("args", "phobos"));
+        let start_time = chrono::Utc::now().timestamp().to_string();
+         let start_str = chrono::Utc::now().format("%a %b %d %H:%M:%S %Y").to_string();
+         nmaprun.push_attribute(("start", start_time.as_str()));
+         nmaprun.push_attribute(("startstr", start_str.as_str()));
+        nmaprun.push_attribute(("version", env!("CARGO_PKG_VERSION")));
+        writer.write_event(Event::Start(nmaprun))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Scaninfo
+        let mut scaninfo = BytesStart::new("scaninfo");
+        scaninfo.push_attribute(("type", "syn"));
+        scaninfo.push_attribute(("protocol", "tcp"));
+        let num_services = results.port_results.len().to_string();
+         scaninfo.push_attribute(("numservices", num_services.as_str()));
+        writer.write_event(Event::Empty(scaninfo))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Host element
+        let mut host = BytesStart::new("host");
+        let host_start_time = chrono::Utc::now().timestamp().to_string();
+         let host_end_time = chrono::Utc::now().timestamp().to_string();
+         host.push_attribute(("starttime", host_start_time.as_str()));
+         host.push_attribute(("endtime", host_end_time.as_str()));
+        writer.write_event(Event::Start(host))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Status
+        let mut status = BytesStart::new("status");
+        status.push_attribute(("state", "up"));
+        status.push_attribute(("reason", "syn-ack"));
+        writer.write_event(Event::Empty(status))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Address
+         let mut address = BytesStart::new("address");
+         address.push_attribute(("addr", results.target.as_str()));
+         address.push_attribute(("addrtype", "ipv4"));
+        writer.write_event(Event::Empty(address))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Ports
+        writer.write_event(Event::Start(BytesStart::new("ports")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        for port_result in &results.port_results {
+            let mut port = BytesStart::new("port");
+            port.push_attribute(("protocol", match port_result.protocol {
+                Protocol::Tcp => "tcp",
+                Protocol::Udp => "udp",
+                _ => "tcp",
+            }));
+            let port_id = port_result.port.to_string();
+             port.push_attribute(("portid", port_id.as_str()));
+            writer.write_event(Event::Start(port))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            
+            // State
+            let mut state = BytesStart::new("state");
+            let state_str = match port_result.state {
+                PortState::Open => "open",
+                PortState::Closed => "closed",
+                PortState::Filtered => "filtered",
+                PortState::OpenFiltered => "open|filtered",
+                PortState::ClosedFiltered => "closed|filtered",
+                PortState::Unfiltered => "unfiltered",
+            };
+            state.push_attribute(("state", state_str));
+            state.push_attribute(("reason", "syn-ack"));
+            writer.write_event(Event::Empty(state))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            
+            // Service
+             if let Some(service) = &port_result.service {
+                 let mut service_elem = BytesStart::new("service");
+                 service_elem.push_attribute(("name", service.as_str()));
+                 service_elem.push_attribute(("method", "probed"));
+                writer.write_event(Event::Empty(service_elem))
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            }
+            
+            writer.write_event(Event::End(BytesEnd::new("port")))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        }
+        
+        writer.write_event(Event::End(BytesEnd::new("ports")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Times
+        let mut times = BytesStart::new("times");
+        times.push_attribute(("srtt", "0"));
+        times.push_attribute(("rttvar", "0"));
+        times.push_attribute(("to", "100000"));
+        writer.write_event(Event::Empty(times))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        writer.write_event(Event::End(BytesEnd::new("host")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        // Runstats
+        writer.write_event(Event::Start(BytesStart::new("runstats")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        let mut finished = BytesStart::new("finished");
+        let finish_time = chrono::Utc::now().timestamp().to_string();
+         let finish_str = chrono::Utc::now().format("%a %b %d %H:%M:%S %Y").to_string();
+         let elapsed_time = results.duration.as_secs_f64().to_string();
+         finished.push_attribute(("time", finish_time.as_str()));
+         finished.push_attribute(("timestr", finish_str.as_str()));
+         finished.push_attribute(("elapsed", elapsed_time.as_str()));
+        writer.write_event(Event::Empty(finished))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        let mut hosts = BytesStart::new("hosts");
+        hosts.push_attribute(("up", "1"));
+        hosts.push_attribute(("down", "0"));
+        hosts.push_attribute(("total", "1"));
+        writer.write_event(Event::Empty(hosts))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        writer.write_event(Event::End(BytesEnd::new("runstats")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        writer.write_event(Event::End(BytesEnd::new("nmaprun")))
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        String::from_utf8(buffer)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
     
     /// Apply color formatting if enabled

@@ -358,9 +358,20 @@ impl IntelligenceEngine {
         };
         
         let _distributed_coordinator = if config.enable_distributed_scanning {
+            let listen_addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+            let fault_tolerance_config = super::distributed::FaultToleranceConfig {
+                max_failures: 3,
+                failure_window: Duration::from_secs(300),
+                health_check_interval: Duration::from_secs(30),
+                backup_nodes: 0,
+                recovery_timeout: Duration::from_secs(300),
+                enable_auto_recovery: true,
+            };
             Some(Arc::new(super::DistributedCoordinator::new(
                 config.distributed_timeout,
                 thread_pool.clone(),
+                listen_addr,
+                fault_tolerance_config,
             ).await?))
         } else {
             None
@@ -596,7 +607,7 @@ impl IntelligenceEngine {
                     service_info.insert(port, info);
                 }
                 Ok(Err(e)) => {
-                    // Enhanced error handling with graceful degradation
+                    // Error handling with graceful degradation
                     self.error_handler.handle_service_detection_error(port, &e).await;
                     
                     // Continue with degraded service info if possible

@@ -43,6 +43,8 @@ num_cpus = "1.16"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 regex = "1.10"
 async-trait = "0.1"
+lazy_static = "1.4"
+rayon = "1.8"
 
 
 

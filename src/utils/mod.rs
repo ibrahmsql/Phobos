@@ -1,6 +1,7 @@
 //! Utility modules for the scanner
 
 pub mod config;
+pub mod profiles;
 pub mod timing;
 
 use std::time::{Duration, Instant};
