@@ -680,8 +680,8 @@ impl ResourceManager {
         let current_memory = *self.current_memory_mb.read().await;
         let current_fds = *self.current_file_descriptors.read().await;
         
-        current_memory + memory_mb <= self.max_memory_mb &&
-        current_fds + file_descriptors <= self.max_file_descriptors
+        current_memory.saturating_add(memory_mb) <= self.max_memory_mb &&
+        current_fds.saturating_add(file_descriptors) <= self.max_file_descriptors
     }
     
     /// Allocate resources
