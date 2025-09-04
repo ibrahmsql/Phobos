@@ -5,6 +5,7 @@
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::VecDeque;
+#[allow(unused_imports)]
 use std::process::Command;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
