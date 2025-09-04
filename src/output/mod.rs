@@ -6,12 +6,11 @@ use crate::network::{PortState, Protocol};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{self, Write};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, RwLock};
+use std::time::Duration;
+use tokio::sync::broadcast;
 use chrono::{DateTime, Utc};
 use quick_xml::Writer;
-use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
+use quick_xml::events::{Event, BytesEnd, BytesStart};
 use std::io::Cursor;
 
 /// Output format options

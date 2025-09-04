@@ -11,9 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
-use openssl::x509::X509;
 use regex::Regex;
-use lazy_static::lazy_static;
 
 use super::core::IntelligenceResult;
 use super::performance::{UltraFastThreadPool, MemoryPool};

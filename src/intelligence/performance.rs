@@ -5,6 +5,7 @@
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::VecDeque;
+use std::process::Command;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -490,7 +491,6 @@ impl PerformanceMonitor {
     /// Get CPU utilization (simplified implementation)
     fn get_cpu_utilization() -> f64 {
         // Get CPU utilization using system commands
-        use std::process::Command;
         
         // Use system-specific commands to get CPU usage
         #[cfg(target_os = "macos")]
@@ -548,7 +548,6 @@ impl PerformanceMonitor {
     /// Get memory usage in bytes
     fn get_memory_usage() -> usize {
         // Get memory usage using system-specific methods
-        use std::process::Command;
         
         #[cfg(target_os = "macos")]
         {
