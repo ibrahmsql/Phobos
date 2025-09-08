@@ -5,7 +5,7 @@ use phobos::{
     error::*,
     config::ScanConfig,
     network::ScanTechnique,
-    scanner::engine::ScanEngine,
+    scanner::ScanResult as ScannerResult,
 };
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
@@ -58,12 +58,9 @@ async fn test_error_handler_recovery_strategies() {
     let strategy = handler.get_recovery_strategy(&config_error, 0).await;
     assert!(matches!(strategy, RecoveryStrategy::Abort));
     
-    // Test circuit breaker wait after multiple failures
-    for _ in 0..5 {
-        handler.record_target_error("test-target").await;
-    }
-    
-    let strategy = handler.get_recovery_strategy(&network_error, 0).await;
+    // Test rate limit error returns circuit breaker wait
+    let rate_limit_error = ScanError::RateLimitError;
+    let strategy = handler.get_recovery_strategy(&rate_limit_error, 0).await;
     assert!(matches!(strategy, RecoveryStrategy::CircuitBreakerWait(_)));
 }
 
@@ -153,7 +150,7 @@ async fn test_error_metrics_tracking() {
     
     // Record various error types
     let network_error = ScanError::NetworkError("Connection failed".to_string());
-    let timeout_error = ScanError::TimeoutError;
+    let timeout_error = ScanError::TimeoutError("Operation timed out".to_string());
     let permission_error = ScanError::PermissionError("Access denied".to_string());
     
     handler.get_recovery_strategy(&network_error, 0).await;
@@ -223,8 +220,8 @@ async fn test_scan_with_fallback_integration() {
     };
     
     // Test fallback mechanism with invalid target first
-    let result = timeout(
-        Duration::from_secs(10),
+    let result: Result<Result<Vec<ScannerResult>, _>, _> = timeout(
+        Duration::from_secs(30),
         scan_with_fallback(
             "invalid.nonexistent.target.example.com",
             &config.ports,

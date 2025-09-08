@@ -25,8 +25,8 @@ pub enum ScanError {
     #[error("Port range error: {0}")]
     PortRangeError(String),
     
-    #[error("Timeout error")]
-    TimeoutError,
+    #[error("Timeout error: {0}")]
+    TimeoutError(String),
     
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -231,7 +231,7 @@ impl ErrorHandler {
         }
         
         match error {
-            ScanError::NetworkError(_) | ScanError::TimeoutError => {
+            ScanError::NetworkError(_) | ScanError::TimeoutError(_) => {
                 self.circuit_breaker.record_failure().await;
                 if attempt < self.max_retries {
                     RecoveryStrategy::Retry
@@ -266,7 +266,7 @@ impl ErrorHandler {
         
         match error {
             ScanError::NetworkError(_) => metrics.network_errors += 1,
-            ScanError::TimeoutError => metrics.timeout_errors += 1,
+            ScanError::TimeoutError(_) => metrics.timeout_errors += 1,
             ScanError::PermissionError(_) => metrics.permission_errors += 1,
             ScanError::RateLimitError => metrics.rate_limit_errors += 1,
             _ => {}
@@ -331,7 +331,7 @@ impl ErrorHandler {
         matches!(
             error,
             ScanError::NetworkError(_)
-                | ScanError::TimeoutError
+                | ScanError::TimeoutError(_)
                 | ScanError::RateLimitError
                 | ScanError::PermissionError(_)
                 | ScanError::RawSocketError(_)
@@ -608,7 +608,9 @@ impl AdaptiveTimeout {
         // Decrease timeout if we have consistent successes
         if self.success_count >= 5 {
             let new_timeout = self.current_timeout.mul_f64(0.9);
-            if new_timeout >= self.base_timeout {
+            // Don't go below half of base timeout
+            let min_timeout = self.base_timeout.mul_f64(0.5);
+            if new_timeout >= min_timeout {
                 self.current_timeout = new_timeout;
             }
             self.success_count = 0;
@@ -726,8 +728,14 @@ impl From<std::num::ParseIntError> for ScanError {
 }
 
 impl From<tokio::time::error::Elapsed> for ScanError {
-    fn from(_: tokio::time::error::Elapsed) -> Self {
-        ScanError::TimeoutError
+    fn from(e: tokio::time::error::Elapsed) -> Self {
+        ScanError::TimeoutError(e.to_string())
+    }
+}
+
+impl From<tokio::sync::AcquireError> for ScanError {
+    fn from(err: tokio::sync::AcquireError) -> Self {
+        ScanError::NetworkError(format!("Semaphore acquire error: {}", err))
     }
 }
 

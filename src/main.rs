@@ -8,16 +8,78 @@ use phobos::{
     network::{ScanTechnique, stealth::StealthOptions},
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
+    scripts::{ScriptEngine, ScriptConfig, ScriptMode},
     utils::config::ConfigValidator,
     utils::profiles::ProfileManager,
+    utils::target_parser::{TargetParser, ParsedTarget, TargetType},
+    utils::file_input::{FileInputHandler, targets_from_file},
     utils::MemoryMonitor,
     benchmark::{Benchmark, NamedTimer},
     top_ports::get_top_1000_ports,
+    adaptive::learning::AdaptiveLearner,
 };
 use anyhow;
 use chrono;
 
-
+// Script engine execution function
+async fn run_script_engine(
+    target: &str,
+    open_ports: &[u16],
+    config: &ScriptConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use phobos::scripts::executor::{ExecutionContext, ExecutionBuilder};
+    use std::collections::HashMap;
+    
+    // Create script engine
+    let script_engine = ScriptEngine::new(config.clone())?;
+    
+    // Create execution context
+    let context = ExecutionBuilder::new()
+        .target(target.to_string())
+        .ports(open_ports.to_vec())
+        .timeout(config.timeout)
+        .build();
+    
+    // Execute scripts
+    let target_ip: std::net::IpAddr = target.parse()?;
+    let port_results: Vec<phobos::network::PortResult> = open_ports.iter().map(|&port| {
+        phobos::network::PortResult {
+            port,
+            state: phobos::network::PortState::Open,
+            service: None,
+            protocol: phobos::network::Protocol::Tcp,
+            response_time: std::time::Duration::from_millis(0),
+        }
+    }).collect();
+    let results = script_engine.execute_scripts(target_ip, &port_results).await?;
+    
+    // Display results
+    for script_result in results {
+                if script_result.success {
+                    println!("{} {} completed in {:?}", 
+                        "[✓]".bright_green(),
+                        script_result.script_name.bright_cyan(),
+                        script_result.execution_time
+                    );
+                    
+                    if !script_result.output.trim().is_empty() {
+                        println!("{}", script_result.output);
+                    }
+                } else {
+                    println!("{} {} failed in {:?}", 
+                        "[!]".bright_red(),
+                        script_result.script_name.bright_yellow(),
+                        script_result.execution_time
+                    );
+                    
+                    if let Some(error) = script_result.error {
+                        eprintln!("Error: {}", error);
+                    }
+                }
+        }
+    
+    Ok(())
+}
 
 // Ulimit adjustment for Unix systems
 #[cfg(unix)]
@@ -53,7 +115,7 @@ fn print_banner() {
     println!("{}", "Phobos – The God of Fear. Forged in Rust ⚡".truecolor(255, 215, 0).bold());
     println!();
     println!("{}", "------------------------------------------------------".bright_blue());
-    println!("{}", ": 🔗 `https://github.com/ibrahmsql/phobos`                :".bright_blue());
+    println!("{}", ": 🔗 `https://github.com/ibrahmsql/phobos`            :".bright_blue());
     println!("{}", ": ⚡ written in Rust | faster than the old gods        :".bright_blue());
     println!("{}", "------------------------------------------------------".bright_blue());
     println!();
@@ -86,6 +148,44 @@ fn resolve_target(target: &str) -> anyhow::Result<String> {
             Err(anyhow::anyhow!("Failed to resolve hostname: {}", target))
         }
     }
+}
+
+/// Parse and validate target with IPv6 and CIDR support
+fn parse_and_validate_target(target: &str) -> anyhow::Result<ParsedTarget> {
+    let parser = TargetParser::default();
+    
+    // Validate target format first
+    parser.validate_target(target)
+        .map_err(|e| anyhow::anyhow!("Invalid target format: {}", e))?;
+    
+    // Parse the target
+    let parsed_target = parser.parse_target(target)
+        .map_err(|e| anyhow::anyhow!("Failed to parse target '{}': {}", target, e))?;
+    
+    // Get target statistics for user information
+    let stats = parser.get_target_stats(&parsed_target);
+    
+    // Warn about large CIDR ranges
+    if stats.total_addresses > 1000 {
+        eprintln!(
+            "{} Large target range detected: {} addresses (estimated scan time: {:?})",
+            "⚠️".yellow(),
+            stats.total_addresses,
+            stats.estimated_scan_time
+        );
+    }
+    
+    // Show IPv6 information if applicable
+    if stats.ipv6_count > 0 {
+        eprintln!(
+            "{} IPv6 addresses detected: {} IPv6, {} IPv4",
+            "🌐".blue(),
+            stats.ipv6_count,
+            stats.ipv4_count
+        );
+    }
+    
+    Ok(parsed_target)
 }
 
 #[tokio::main]
@@ -201,6 +301,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Number of concurrent threads")
                 .value_parser(clap::value_parser!(usize))
                 .default_value("100"), // Reasonable default thread count
+        )
+        .arg(
+            Arg::new("input-file")
+                .short('i')
+                .long("input-file")
+                .value_name("FILE")
+                .help("Read targets from file (supports plain text, CSV, JSON, Nmap XML)")
+                .conflicts_with("target")
+        )
+        .arg(
+            Arg::new("output-nmap")
+                .long("output-nmap")
+                .value_name("FILE")
+                .help("Save results in Nmap XML format for further processing")
         )
         .arg(
             Arg::new("timeout")
@@ -345,6 +459,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("IFACE")
                 .help("Network interface to use for scanning"),
         )
+        .arg(
+            Arg::new("scripts")
+                .long("scripts")
+                .value_name("MODE")
+                .help("Script execution mode (none, default, custom, all, adaptive)")
+                .value_parser(["none", "default", "custom", "all", "adaptive"])
+                .default_value("default"),
+        )
+        .arg(
+            Arg::new("script-dir")
+                .long("script-dir")
+                .value_name("DIR")
+                .help("Directory containing custom scripts"),
+        )
+        .arg(
+            Arg::new("script-tags")
+                .long("script-tags")
+                .value_name("TAGS")
+                .help("Comma-separated list of script tags to execute")
+                .value_delimiter(','),
+        )
+        .arg(
+            Arg::new("script-timeout")
+                .long("script-timeout")
+                .value_name("SECONDS")
+                .help("Timeout for script execution in seconds")
+                .value_parser(clap::value_parser!(u64))
+                .default_value("300"),
+        )
+        .arg(
+            Arg::new("max-script-concurrent")
+                .long("max-script-concurrent")
+                .value_name("COUNT")
+                .help("Maximum number of concurrent script executions")
+                .value_parser(clap::value_parser!(usize))
+                .default_value("10"),
+        )
 
         .get_matches();
     
@@ -454,12 +605,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ScanConfig::load_default_config()
     };
 
-    // Parse arguments and override config
-    let target = if let Some(target_input) = matches.get_one::<String>("target") {
-        resolve_target(target_input)?
+    // Parse arguments and override config with IPv6/CIDR support
+    let (target, parsed_target, target_list) = if let Some(input_file) = matches.get_one::<String>("input-file") {
+        // Read targets from file
+        println!("{} {}", "[~] Reading targets from file:".bright_blue(), input_file.bright_cyan());
+        let file_targets = targets_from_file(input_file, None)?;
+        println!("{} {} targets loaded", "[✓]".bright_green(), file_targets.len().to_string().bright_white().bold());
+        
+        if file_targets.is_empty() {
+            eprintln!("No valid targets found in file: {}", input_file);
+            process::exit(1);
+        }
+        
+        // Use first target as primary, but scan all
+        let first_target = file_targets[0].original.clone();
+        (first_target, None, file_targets)
+    } else if let Some(target_input) = matches.get_one::<String>("target") {
+        let parsed = parse_and_validate_target(target_input)?;
+        let resolved = match &parsed.target_type {
+            TargetType::SingleIpv4 | TargetType::SingleIpv6 => {
+                parsed.addresses.first().unwrap().to_string()
+            },
+            TargetType::Hostname => resolve_target(&parsed.original)?,
+            TargetType::Ipv4Cidr | TargetType::Ipv6Cidr => {
+                parsed.addresses.first().unwrap().to_string()
+            },
+            TargetType::HostnameList => {
+                parsed.addresses.first().unwrap().to_string()
+            },
+        };
+        let target_list = vec![parsed.clone()];
+        (resolved, Some(parsed), target_list)
     } else {
         // This should not happen due to required_unless_present_any, but handle gracefully
-        "127.0.0.1".to_string()
+        let default_ip = "127.0.0.1".parse().unwrap();
+        let default_parsed = ParsedTarget {
+            original: "127.0.0.1".to_string(),
+            target_type: TargetType::SingleIpv4,
+            addresses: vec![default_ip],
+            cidr_info: None,
+        };
+        ("127.0.0.1".to_string(), None, vec![default_parsed])
     };
     
     // Parse ports with new default behavior
@@ -786,10 +972,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             
-            // Run Nmap if not ports-only mode and open ports found
+            // Run scripts if not ports-only mode and open ports found
             if !matches.get_flag("ports-only") && !open_ports.is_empty() {
                 println!("{} {}", "[~]".bright_blue(), "Starting Script(s)".bright_yellow().bold());
-                run_nmap_scan(&target, &open_ports, matches.get_one::<String>("nmap-args"));
+                
+                // Create script configuration
+                let script_mode = match matches.get_one::<String>("scripts").map(|s| s.as_str()) {
+                    Some("none") => ScriptMode::None,
+                    Some("default") => ScriptMode::Default,
+                    Some("custom") => ScriptMode::Custom,
+                    Some("all") => ScriptMode::All,
+                    Some("adaptive") => ScriptMode::Adaptive,
+                    _ => ScriptMode::Default,
+                };
+                
+                if script_mode != ScriptMode::None {
+                    let mut script_config = ScriptConfig::default();
+                    script_config.mode = script_mode;
+                    script_config.ports = Some(open_ports.clone());
+                    
+                    // Add custom script directory if specified
+                    if let Some(script_dir) = matches.get_one::<String>("script-dir") {
+                        script_config.directories = vec![std::path::PathBuf::from(script_dir.clone())];
+                    }
+                    
+                    // Add script tags if specified
+                    if let Some(tags) = matches.get_one::<String>("script-tags") {
+                        script_config.tags = Some(tags.split(',').map(|t| t.trim().to_string()).collect());
+                    }
+                    
+                    // Set timeout and concurrency
+                    if let Some(timeout) = matches.get_one::<u64>("script-timeout") {
+                        script_config.timeout = std::time::Duration::from_millis(*timeout);
+                    }
+                    
+                    if let Some(max_concurrent) = matches.get_one::<usize>("max-script-concurrent") {
+                        script_config.max_concurrent = *max_concurrent;
+                    }
+                    
+                    // Run script engine
+                    if let Err(e) = run_script_engine(&target, &open_ports, &script_config).await {
+                        eprintln!("{} Script execution failed: {}", "[!]".bright_red(), e);
+                    }
+                }
+            }
+            
+            
+            // Run Nmap if nmap-args are provided
+            if let Some(nmap_args) = matches.get_one::<String>("nmap-args") {
+                run_nmap_scan(&target, &open_ports, Some(nmap_args));
             }
         }
         Err(e) => {

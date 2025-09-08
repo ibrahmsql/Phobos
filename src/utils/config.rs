@@ -358,6 +358,7 @@ impl EnvironmentConfig {
             ScanTechnique::Xmas => "XMAS",
             ScanTechnique::Ack => "ACK",
             ScanTechnique::Window => "WINDOW",
+            ScanTechnique::Stealth => "STEALTH",
         };
         std::env::set_var("PHOBOS_TECHNIQUE", technique_str);
     }

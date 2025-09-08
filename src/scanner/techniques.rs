@@ -322,6 +322,7 @@ impl ScanTechniqueImpl for AckScan {
 }
 
 /// UDP scan implementation
+#[derive(Debug)]
 pub struct UdpScan;
 
 impl ScanTechniqueImpl for UdpScan {
@@ -397,6 +398,7 @@ impl TechniqueFactory {
             ScanTechnique::Xmas => Box::new(XmasScan),
             ScanTechnique::Ack => Box::new(AckScan),
             ScanTechnique::Window => Box::new(AckScan), // Similar to ACK scan
+            ScanTechnique::Stealth => Box::new(SynScan), // Use SYN scan for stealth
             ScanTechnique::Udp => Box::new(UdpScan),
         }
     }
