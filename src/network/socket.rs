@@ -9,6 +9,7 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 
 /// Raw socket wrapper for sending crafted packets
+#[derive(Debug)]
 pub struct RawSocket {
     socket: Socket,
     _protocol: Protocol,
@@ -134,6 +135,7 @@ impl RawSocket {
 }
 
 /// TCP connect scanner for non-raw socket scanning 
+#[derive(Debug)]
 pub struct TcpConnectScanner {
     timeout: Duration,
     /// Connection pool for reusing sockets
@@ -255,6 +257,7 @@ impl Clone for TcpConnectScanner {
 }
 
 /// UDP scanner for UDP port scanning
+#[derive(Debug)]
 pub struct UdpScanner {
     timeout: Duration,
     /// Service-specific probes for better UDP detection
@@ -465,7 +468,21 @@ impl Clone for UdpScanner {
     }
 }
 
+// Manual Clone implementation for SocketPool
+impl Clone for SocketPool {
+    fn clone(&self) -> Self {
+        Self {
+            tcp_sockets: Vec::new(), // Create empty socket vectors
+            udp_sockets: Vec::new(),
+            icmp_socket: None,
+            current_tcp: std::sync::atomic::AtomicUsize::new(0),
+            current_udp: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+}
+
 /// Socket pool for managing multiple raw sockets
+#[derive(Debug)]
 pub struct SocketPool {
     tcp_sockets: Vec<RawSocket>,
     udp_sockets: Vec<RawSocket>,

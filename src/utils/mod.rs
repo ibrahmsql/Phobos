@@ -3,6 +3,8 @@
 pub mod config;
 pub mod profiles;
 pub mod timing;
+pub mod target_parser;
+pub mod file_input;
 
 use std::time::{Duration, Instant};
 
@@ -335,7 +337,7 @@ impl ErrorHandler {
                 err_msg.contains("TimedOut") ||
                 err_msg.contains("Interrupted")
             }
-            crate::ScanError::TimeoutError => true,
+            crate::ScanError::TimeoutError(_) => true,
             crate::ScanError::RateLimitError => true,
             _ => false,
         }
@@ -345,7 +347,7 @@ impl ErrorHandler {
     pub fn retry_delay(error: &crate::ScanError, attempt: u32) -> Duration {
         let base_delay = match error {
             crate::ScanError::NetworkError(_) => Duration::from_millis(100),
-            crate::ScanError::TimeoutError => Duration::from_millis(500),
+            crate::ScanError::TimeoutError(_) => Duration::from_millis(500),
             crate::ScanError::RateLimitError => Duration::from_millis(1000),
             _ => Duration::from_millis(100),
         };

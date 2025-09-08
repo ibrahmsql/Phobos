@@ -23,10 +23,12 @@ pub enum ScanTechnique {
     Null,
     /// TCP XMAS scan (FIN, PSH, URG flags)
     Xmas,
-    /// TCP ACK scan (firewall detection)
+    /// TCP ACK scan
     Ack,
     /// TCP Window scan
     Window,
+    /// Stealth scan (combination of techniques)
+    Stealth,
 }
 
 impl ScanTechnique {
@@ -41,6 +43,7 @@ impl ScanTechnique {
             ScanTechnique::Xmas => "XMAS",
             ScanTechnique::Ack => "ACK",
             ScanTechnique::Window => "Window",
+            ScanTechnique::Stealth => "Stealth",
         }
     }
     
@@ -70,6 +73,7 @@ impl ScanTechnique {
             ScanTechnique::Ack => "TCP ACK scan",
             ScanTechnique::Window => "TCP Window scan",
             ScanTechnique::Udp => "UDP scan",
+            ScanTechnique::Stealth => "Stealth scan",
         }
     }
     
@@ -92,6 +96,7 @@ impl ScanTechnique {
             ScanTechnique::Ack => 0x10,      // ACK flag
             ScanTechnique::Window => 0x10,   // ACK flag
             ScanTechnique::Udp => 0x00,      // Not applicable for UDP
+            ScanTechnique::Stealth => 0x02, // SYN flag for stealth
         }
     }
 }

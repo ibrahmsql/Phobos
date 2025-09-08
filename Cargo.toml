@@ -45,6 +45,7 @@ regex = "1.10"
 async-trait = "0.1"
 lazy_static = "1.4"
 rayon = "1.8"
+tempfile = "3.8"
 
 
 

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 /// Common service ports mapping
 #[derive(Clone)]
+#[derive(Debug)]
 pub struct ServiceDatabase {
     tcp_services: HashMap<u16, &'static str>,
     udp_services: HashMap<u16, &'static str>,
@@ -120,6 +121,8 @@ impl ServiceDatabase {
 }
 
 /// Response analyzer for determining port states
+#[derive(Clone)]
+#[derive(Debug)]
 pub struct ResponseAnalyzer {
     technique: ScanTechnique,
 }
@@ -162,6 +165,14 @@ impl ResponseAnalyzer {
                     _ => PortState::Filtered,
                 }
             }
+            ScanTechnique::Stealth => {
+                match response {
+                    Some(resp) if resp.is_syn_ack() => PortState::Open,
+                    Some(resp) if resp.is_rst() => PortState::Closed,
+                    None if timeout => PortState::Filtered,
+                    _ => PortState::Filtered,
+                }
+            }
             ScanTechnique::Udp => {
                 // UDP analysis is different
                 PortState::OpenFiltered
@@ -189,6 +200,7 @@ impl ResponseAnalyzer {
 }
 
 /// Rate limiter for controlling packet sending rate
+#[derive(Debug)]
 pub struct RateLimiter {
     rate: u64,
     last_send: std::time::Instant,
