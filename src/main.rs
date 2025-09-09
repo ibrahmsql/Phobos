@@ -12,11 +12,11 @@ use phobos::{
     utils::config::ConfigValidator,
     utils::profiles::ProfileManager,
     utils::target_parser::{TargetParser, ParsedTarget, TargetType},
-    utils::file_input::{FileInputHandler, targets_from_file},
+    utils::file_input::targets_from_file,
     utils::MemoryMonitor,
     benchmark::{Benchmark, NamedTimer},
     top_ports::get_top_1000_ports,
-    adaptive::learning::AdaptiveLearner,
+
 };
 use anyhow;
 use chrono;
@@ -27,14 +27,13 @@ async fn run_script_engine(
     open_ports: &[u16],
     config: &ScriptConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use phobos::scripts::executor::{ExecutionContext, ExecutionBuilder};
-    use std::collections::HashMap;
+    use phobos::scripts::executor::ExecutionBuilder;
     
     // Create script engine
     let script_engine = ScriptEngine::new(config.clone())?;
     
     // Create execution context
-    let context = ExecutionBuilder::new()
+    let _context = ExecutionBuilder::new()
         .target(target.to_string())
         .ports(open_ports.to_vec())
         .timeout(config.timeout)
@@ -606,7 +605,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Parse arguments and override config with IPv6/CIDR support
-    let (target, parsed_target, target_list) = if let Some(input_file) = matches.get_one::<String>("input-file") {
+    let (target, _parsed_target, _target_list) = if let Some(input_file) = matches.get_one::<String>("input-file") {
         // Read targets from file
         println!("{} {}", "[~] Reading targets from file:".bright_blue(), input_file.bright_cyan());
         let file_targets = targets_from_file(input_file, None)?;

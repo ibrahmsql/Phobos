@@ -7,14 +7,13 @@
 //! - Performance-optimized script execution
 //! - Adaptive script selection based on scan results
 
-use crate::config::ScanConfig;
 use crate::{Result, ScanError};
 use crate::network::{PortResult, PortState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::process::Command as AsyncCommand;
 

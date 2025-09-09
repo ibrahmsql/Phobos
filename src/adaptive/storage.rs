@@ -6,7 +6,6 @@
 use super::*;
 use anyhow::{Context, Result};
 use serde_json;
-use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::fs as async_fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

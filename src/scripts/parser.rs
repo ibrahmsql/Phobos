@@ -4,7 +4,6 @@ use super::*;
 use crate::{Result, ScanError};
 use log::{debug, warn};
 use serde_json;
-use std::collections::HashSet;
 use toml;
 
 /// Script configuration parser

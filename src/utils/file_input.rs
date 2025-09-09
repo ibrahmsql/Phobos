@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
-use std::net::IpAddr;
 use std::path::Path;
 use crate::utils::target_parser::{TargetParser, ParsedTarget};
 

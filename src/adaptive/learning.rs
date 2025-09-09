@@ -5,7 +5,6 @@
 
 use super::*;
 use crate::config::ScanConfig;
-use crate::network::PortState;
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
@@ -17,7 +16,6 @@ use super::storage::StoredTargetProfile;
 pub struct AdaptiveLearner {
     config: AdaptiveConfig,
     storage: Arc<Mutex<LearningStorage>>,
-    optimizer: ScanOptimizer,
     predictor: PortPredictor,
     scan_history: Arc<RwLock<VecDeque<ScanStats>>>,
     target_profiles: Arc<RwLock<HashMap<String, TargetProfile>>>,
@@ -58,13 +56,11 @@ impl AdaptiveLearner {
     /// Create a new adaptive learner
     pub async fn new(config: AdaptiveConfig) -> Result<Self> {
         let storage = Arc::new(Mutex::new(LearningStorage::new().await?));
-        let optimizer = ScanOptimizer::new(config.clone());
         let predictor = PortPredictor::new(config.clone());
         
         Ok(Self {
             config,
             storage,
-            optimizer,
             predictor,
             scan_history: Arc::new(RwLock::new(VecDeque::new())),
             target_profiles: Arc::new(RwLock::new(HashMap::new())),
@@ -92,7 +88,7 @@ impl AdaptiveLearner {
         self.update_target_profile(&stats).await?;
         
         // Store in persistent storage
-        let mut storage = self.storage.lock().await;
+        let storage = self.storage.lock().await;
         storage.store_scan_stats(&stats).await?;
         
         Ok(())
