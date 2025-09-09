@@ -51,7 +51,7 @@ pub struct PortPrediction {
 struct PredictionContext {
     target_type: TargetType,
     known_open_ports: Vec<u16>,
-    scan_history_count: usize,
+    _scan_history_count: usize,
     time_of_day: u8, // 0-23
     day_of_week: u8,  // 0-6
 }
@@ -178,7 +178,7 @@ impl PortPredictor {
     }
     
     /// Build prediction context
-    async fn build_prediction_context(&self, target: &str) -> Result<PredictionContext> {
+    async fn build_prediction_context(&self, _target: &str) -> Result<PredictionContext> {
         // This would typically involve analyzing the target
         // For now, we'll use a simplified approach
         let target_type = TargetType::Unknown; // Would be determined by previous scans or analysis
@@ -194,7 +194,7 @@ impl PortPredictor {
         Ok(PredictionContext {
             target_type,
             known_open_ports: Vec::new(), // Would be populated from previous scans
-            scan_history_count: 0,
+            _scan_history_count: 0,
             time_of_day,
             day_of_week,
         })

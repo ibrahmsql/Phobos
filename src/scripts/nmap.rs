@@ -298,7 +298,7 @@ impl NmapEngine {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
             stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             success: output.status.success(),
-            exit_code: output.status.code(),
+            _exit_code: output.status.code(),
         })
     }
 
@@ -411,5 +411,5 @@ struct CommandOutput {
     stdout: String,
     stderr: String,
     success: bool,
-    exit_code: Option<i32>,
+    _exit_code: Option<i32>,
 }

@@ -2,18 +2,17 @@
 
 use crate::config::ScanConfig;
 use crate::network::{
-    packet::{PacketParser, TcpPacketBuilder, TcpResponse, UdpPacketBuilder},
     protocol::{NetworkUtils, RateLimiter, ResponseAnalyzer, ServiceDatabase},
     socket::{SocketPool, TcpConnectScanner, UdpScanner},
     PortResult, PortState, Protocol, ScanTechnique,
 };
-use crate::scanner::{create_batches, ScanBatch, ScanProgress, ScanResult, ScanStats};
+use crate::scanner::{create_batches, ScanBatch, ScanResult, ScanStats};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::timeout;
 use futures::stream::{FuturesUnordered, StreamExt};
 // use rayon::prelude::*; // Unused import removed
@@ -36,7 +35,7 @@ pub struct ScanEngine {
 
 /// Performance statistics for adaptive optimization
 #[derive(Debug, Default, Clone)]
-struct PerformanceStats {
+pub struct PerformanceStats {
     total_scans: u64,
     successful_connections: u64,
     failed_connections: u64,
@@ -171,7 +170,7 @@ impl ScanEngine {
         
         // Parse target IPs
         let target_ips = NetworkUtils::parse_cidr(&self.config.target)?;
-        let ports = &self.config.ports;
+        let _ports = &self.config.ports;
         
         let mut all_results = Vec::new();
         let mut total_stats = ScanStats::default();
@@ -295,7 +294,7 @@ impl ScanEngine {
         let state = if let Some(ref tcp_scanner) = self.tcp_scanner {
             // Use optimized TCP Connect scan
             self.scan_tcp_high_performance(tcp_scanner, target, port).await?
-        } else if let Some(ref socket_pool) = self.socket_pool {
+        } else if let Some(ref _socket_pool) = self.socket_pool {
             // Use raw socket scan
             self.scan_port_raw(target, port).await?
         } else {
@@ -321,7 +320,7 @@ impl ScanEngine {
     }
     
     /// Ultra-fast TCP scanning with connection pooling
-    async fn scan_tcp_high_performance(&self, tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
+    async fn scan_tcp_high_performance(&self, _tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
         let socket_addr = SocketAddr::new(IpAddr::V4(target), port);
         
         // Try to reuse existing connection from pool
@@ -438,7 +437,7 @@ impl ScanEngine {
     }
     
     // Placeholder for raw socket scanning (from original implementation)
-    async fn scan_port_raw(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
+    async fn scan_port_raw(&self, _target: Ipv4Addr, _port: u16) -> crate::Result<PortState> {
         // This would contain the raw socket implementation
         // For now, fallback to closed state
         Ok(PortState::Closed)

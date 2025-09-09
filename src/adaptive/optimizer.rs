@@ -19,7 +19,7 @@ pub struct ScanOptimizer {
 
 /// Performance metrics for different configurations
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct PerformanceMetrics {
+pub struct PerformanceMetrics {
     avg_duration: Duration,
     success_rate: f64,
     accuracy: f64,
@@ -116,13 +116,13 @@ impl ScanOptimizer {
         historical_data: &[ScanStats],
     ) -> Result<ScanContext> {
         let mut context = ScanContext {
-            target: target.to_string(),
+            _target: target.to_string(),
             target_type: target_type.clone(),
             historical_scans: historical_data.len(),
             avg_response_time: Duration::from_millis(100),
             common_open_ports: Vec::new(),
             peak_performance_config: None,
-            network_characteristics: NetworkCharacteristics::default(),
+            _network_characteristics: NetworkCharacteristics::default(),
         };
         
         if !historical_data.is_empty() {
@@ -149,7 +149,7 @@ impl ScanOptimizer {
                 .min_by_key(|s| s.scan_duration.as_millis()) {
                 context.peak_performance_config = Some(PerfConfig {
                     threads: best_scan.thread_count,
-                    timeout: best_scan.timeout,
+                    _timeout: best_scan.timeout,
                     technique: best_scan.technique_used.clone(),
                 });
             }
@@ -370,28 +370,28 @@ impl ScanOptimizer {
 /// Context information for optimization decisions
 #[derive(Debug, Clone)]
 struct ScanContext {
-    target: String,
+    _target: String,
     target_type: TargetType,
     historical_scans: usize,
     avg_response_time: Duration,
     common_open_ports: Vec<u16>,
     peak_performance_config: Option<PerfConfig>,
-    network_characteristics: NetworkCharacteristics,
+    _network_characteristics: NetworkCharacteristics,
 }
 
 /// Peak performance configuration
 #[derive(Debug, Clone)]
 struct PerfConfig {
     threads: usize,
-    timeout: Duration,
+    _timeout: Duration,
     technique: String,
 }
 
 /// Network characteristics
 #[derive(Debug, Clone, Default)]
 struct NetworkCharacteristics {
-    latency: Duration,
-    bandwidth: f64,
-    packet_loss: f64,
-    jitter: Duration,
+    _latency: Duration,
+    _bandwidth: f64,
+    _packet_loss: f64,
+    _jitter: Duration,
 }
