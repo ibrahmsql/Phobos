@@ -1,7 +1,7 @@
 //! Advanced OS fingerprinting system for Phobos
 //! Uses multiple techniques to identify target operating systems
 
-use crate::network::{PortResult, PortState, Protocol};
+use crate::network::{PortResult, PortState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -85,6 +85,7 @@ pub struct OSFingerprinter {
 #[derive(Debug, Clone)]
 struct PortSignature {
     common_ports: Vec<u16>,
+    #[allow(dead_code)]
     rare_ports: Vec<u16>,
     service_combinations: Vec<Vec<u16>>,
     confidence_weight: f64,
@@ -94,6 +95,7 @@ struct PortSignature {
 #[derive(Debug, Clone)]
 struct BannerPattern {
     pattern: String,
+    #[allow(dead_code)]
     os_indicator: String,
     confidence: f64,
 }
@@ -214,7 +216,7 @@ impl OSFingerprinter {
     }
     
     /// Perform OS detection on scan results
-    pub fn detect_os(&self, target: IpAddr, port_results: &[PortResult]) -> OSDetectionResult {
+    pub fn detect_os(&self, _target: IpAddr, port_results: &[PortResult]) -> OSDetectionResult {
         let mut detection_methods = Vec::new();
         let mut confidence_scores: HashMap<OSFamily, f64> = HashMap::new();
         

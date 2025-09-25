@@ -7,7 +7,7 @@ use phobos::network::{
     protocol::NetworkUtils,
     ScanTechnique,
 };
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
@@ -84,7 +84,7 @@ async fn test_icmp_pinger() {
     let pinger_result = IcmpPinger::new();
     
     match pinger_result {
-        Ok(mut pinger) => {
+        Ok(pinger) => {
             let target = Ipv4Addr::new(127, 0, 0, 1);
             
             let start = Instant::now();

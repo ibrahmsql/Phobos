@@ -2,8 +2,7 @@
 
 use phobos::{
     intelligence::{
-        service_detection::{ServiceDetectionEngine, VulnerabilityScanner, SSLAnalyzer, BannerGrabber, ServiceDetector},
-        core::IntelligenceConfig,
+        service_detection::{ServiceDetectionEngine, VulnerabilityScanner, SSLAnalyzer, ServiceDetector},
         performance::{UltraFastThreadPool, MemoryPool},
     },
     scanner::engine::ScanEngine,
@@ -46,7 +45,7 @@ async fn test_vulnerability_scanner() {
     let scanner = VulnerabilityScanner::new();
     
     // Test vulnerability scanning on localhost
-    let target: std::net::SocketAddr = "127.0.0.1:22".parse().unwrap();
+    let _target: std::net::SocketAddr = "127.0.0.1:22".parse().unwrap();
     
     let service_info = phobos::intelligence::service_detection::ServiceInfo {
         port: 22,
