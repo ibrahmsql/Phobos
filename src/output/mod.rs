@@ -671,7 +671,7 @@ impl ProgressDisplay {
         
         print!("\r[{}] {:.1}% ({}/{}) {:.1} ports/sec ETA: {:.0}s",
             bar, percentage, self.completed_ports, self.total_ports, rate, eta);
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush(); // Handle error gracefully
     }
     
     /// Finish progress display

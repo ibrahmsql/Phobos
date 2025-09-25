@@ -75,7 +75,8 @@ impl AdaptiveLearner {
         
         // Add to scan history
         {
-            let mut history = self.scan_history.write().unwrap();
+            let mut history = self.scan_history.write()
+                .map_err(|_| crate::ScanError::ConfigError("Failed to acquire write lock on scan history".to_string()))?;
             history.push_back(stats.clone());
             
             // Limit history size
@@ -155,7 +156,8 @@ impl AdaptiveLearner {
     
     /// Update target profile with new scan data
     async fn update_target_profile(&self, stats: &ScanStats) -> Result<()> {
-        let mut profiles = self.target_profiles.write().unwrap();
+        let mut profiles = self.target_profiles.write()
+            .map_err(|_| crate::ScanError::ConfigError("Failed to acquire write lock on target profiles".to_string()))?;
         let profile = profiles.entry(stats.target.clone()).or_insert_with(|| {
             TargetProfile {
                 target_type: TargetType::classify_from_ports(&stats.open_ports),

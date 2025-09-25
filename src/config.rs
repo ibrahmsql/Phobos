@@ -128,9 +128,21 @@ impl ScanConfig {
             return custom_batch;
         }
         
-        // Aggressive batch sizing for optimal performance
-        let base_batch = std::cmp::max(100, (self.rate_limit as usize) / (self.threads));
-        std::cmp::min(base_batch, 2000) // Large batch size for better performance
+        // Intelligent batch sizing based on system capabilities
+        let cpu_cores = num_cpus::get();
+        let memory_factor = if self.ports.len() > 10000 { 2 } else { 1 };
+        
+        // Calculate base batch considering CPU cores and memory
+        let base_batch = std::cmp::max(
+            50, // Minimum batch size
+            std::cmp::min(
+                (self.rate_limit as usize) / (self.threads * cpu_cores),
+                self.ports.len() / (self.threads * memory_factor)
+            )
+        );
+        
+        // Cap at reasonable maximum to prevent memory issues
+        std::cmp::min(base_batch, 5000)
     }
     
     /// Load configuration from TOML file

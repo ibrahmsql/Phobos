@@ -192,8 +192,8 @@ impl ConfigValidator {
         // Validate rate limit
         if config.rate_limit == 0 {
             errors.push("Rate limit must be greater than 0".to_string());
-        } else if config.rate_limit > 10_000_000 {
-            errors.push("Rate limit is too high (max 10M pps)".to_string());
+        } else if config.rate_limit > 50_000_000 {
+            errors.push("Rate limit is too high (max 50M pps)".to_string());
         }
         
         // Validate technique compatibility

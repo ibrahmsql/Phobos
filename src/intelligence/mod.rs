@@ -14,6 +14,8 @@ pub mod distributed;
 pub mod network_discovery;
 pub mod asset_management;
 pub mod performance;
+pub mod smart_prediction;
+pub mod os_fingerprinting;
 
 #[cfg(test)]
 mod tests;
@@ -57,4 +59,12 @@ pub use asset_management::{
 pub use performance::{
     PerformanceMonitor, MemoryPool, ZeroCopyBuffer,
     UltraFastThreadPool,
+};
+
+pub use smart_prediction::{
+    SmartPredictor, PortPrediction,
+};
+
+pub use os_fingerprinting::{
+    OSFingerprinter, OSDetectionResult, OperatingSystem, OSFamily,
 };

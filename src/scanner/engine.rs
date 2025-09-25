@@ -336,8 +336,8 @@ impl ScanEngine {
             }
         }
         
-        // Create new connection with ultra-short timeout
-        let timeout_duration = Duration::from_millis(50); // Ultra-fast timeout
+        // Use configured timeout for reliable detection
+        let timeout_duration = self.config.timeout_duration();
         
         match timeout(timeout_duration, tokio::net::TcpStream::connect(socket_addr)).await {
             Ok(Ok(stream)) => {

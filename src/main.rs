@@ -5,7 +5,8 @@ use std::net::{IpAddr, ToSocketAddrs};
 use colored::*;
 use phobos::{
     config::ScanConfig,
-    network::{ScanTechnique, stealth::StealthOptions},
+    network::{ScanTechnique, stealth::StealthOptions, phobos_modes::{PhobosModeManager, FearLevel}},
+    intelligence::os_fingerprinting::OSFingerprinter,
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
     scripts::{ScriptEngine, ScriptConfig, ScriptMode},
@@ -95,8 +96,13 @@ fn adjust_ulimit_size(ulimit: Option<u64>) -> u64 {
         }
     }
     
-    let (soft, _) = Resource::NOFILE.get().unwrap();
-    soft
+    match Resource::NOFILE.get() {
+        Ok((soft, _)) => soft,
+        Err(_) => {
+            eprintln!("{}", "[!] WARNING: Could not get file descriptor limit".bright_yellow());
+            8000 // Safe default
+        }
+    }
 }
 
 #[cfg(not(unix))]
@@ -496,6 +502,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("10"),
         )
 
+        .arg(
+            Arg::new("wrath")
+                .long("wrath")
+                .help("Wrath of Phobos: Maximum aggression with evasion techniques")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("shadow-scan")
+                .long("shadow")
+                .help("Shadow scanning: Nearly invisible to detection systems")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("os-detection")
+                .short('O')
+                .long("os-detect")
+                .help("Enable advanced OS fingerprinting and detection")
+                .action(ArgAction::SetTrue),
+        )
+
+
         .get_matches();
     
     let greppable = matches.get_flag("greppable");
@@ -623,14 +650,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let parsed = parse_and_validate_target(target_input)?;
         let resolved = match &parsed.target_type {
             TargetType::SingleIpv4 | TargetType::SingleIpv6 => {
-                parsed.addresses.first().unwrap().to_string()
+                parsed.addresses.first()
+                    .ok_or_else(|| anyhow::anyhow!("No addresses found for target"))?
+                    .to_string()
             },
             TargetType::Hostname => resolve_target(&parsed.original)?,
             TargetType::Ipv4Cidr | TargetType::Ipv6Cidr => {
-                parsed.addresses.first().unwrap().to_string()
+                parsed.addresses.first()
+                    .ok_or_else(|| anyhow::anyhow!("No addresses found for CIDR target"))?
+                    .to_string()
             },
             TargetType::HostnameList => {
-                parsed.addresses.first().unwrap().to_string()
+                parsed.addresses.first()
+                    .ok_or_else(|| anyhow::anyhow!("No addresses found for hostname list"))?
+                    .to_string()
             },
         };
         let target_list = vec![parsed.clone()];
@@ -719,6 +752,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+    // Initialize Phobos Mode Manager with default settings
+    let mut phobos_manager = PhobosModeManager::new(FearLevel::Normal);
+    
+    // Apply Phobos-specific modes
+    if matches.get_flag("wrath") {
+        phobos_manager.enable_wrath();
+        println!("{} {}", 
+            "[🔥] WRATH MODE".bright_red().bold(),
+            "- Maximum aggression with evasion".bright_yellow()
+        );
+    }
+    
+    if matches.get_flag("shadow-scan") {
+        phobos_manager.enable_shadow();
+        println!("{} {}", 
+            "[👤] SHADOW MODE".bright_blue().bold(),
+            "- Stealth scanning enabled".bright_cyan()
+        );
+    }
+
     let technique_str = matches.get_one::<String>("technique").unwrap();
     let timing_level = matches.get_one::<String>("timing").unwrap().parse::<u8>().unwrap_or(3);
     let threads = *matches.get_one::<usize>("threads").unwrap();
@@ -760,8 +813,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         show_filtered: false,
     };
 
-    // Create scan configuration by merging base config with CLI args
-    let scan_config = ScanConfig {
+    // Create base scan configuration
+    let mut scan_config = ScanConfig {
         target: target.clone(),
         ports,
         technique,
@@ -778,6 +831,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         min_response_time: base_config.min_response_time,
         max_response_time: base_config.max_response_time,
     };
+    
+    // Apply Phobos modes to configuration
+    scan_config = phobos_manager.apply_to_config(scan_config);
     
     // Show batch size info with colors and special handling for --all
     let calculated_batch = scan_config.batch_size();
@@ -958,6 +1014,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             
+            // OS Detection if enabled
+            if matches.get_flag("os-detection") && !open_ports.is_empty() {
+                println!();
+                println!("{}", "OS Detection Results:".bright_blue().bold());
+                println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue());
+                
+                let os_fingerprinter = OSFingerprinter::new();
+                let target_ip = target.parse().unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
+                let os_result = os_fingerprinter.detect_os(target_ip, &results.port_results);
+                
+                if let Some(os) = os_result.primary_os {
+                    println!("{} {} ({}% confidence)", 
+                        "Primary OS:".bright_yellow(),
+                        format!("{} {}", os.name, os.version.unwrap_or_default()).bright_green().bold(),
+                        (os_result.confidence * 100.0) as u8
+                    );
+                    println!("{} {}", 
+                        "Vendor:".bright_yellow(),
+                        os.vendor.bright_cyan()
+                    );
+                    
+                    // Show detection methods used
+                    let methods: Vec<String> = os_result.detection_methods.iter()
+                        .map(|m| format!("{:?}", m))
+                        .collect();
+                    println!("{} {}", 
+                        "Detection Methods:".bright_yellow(),
+                        methods.join(", ").bright_white()
+                    );
+                    
+                    // Show secondary matches if any
+                    if !os_result.secondary_matches.is_empty() {
+                        println!();
+                        println!("{}", "Alternative Matches:".bright_yellow());
+                        for (i, alt_match) in os_result.secondary_matches.iter().enumerate().take(2) {
+                            println!("  {}. {} ({}% confidence)", 
+                                i + 1,
+                                alt_match.os.name.bright_white(),
+                                (alt_match.confidence * 100.0) as u8
+                            );
+                        }
+                    }
+                } else {
+                    println!("{}", "Unable to determine OS - insufficient data".bright_red());
+                    println!("{}", "Try scanning more ports or enabling service detection".bright_yellow());
+                }
+                println!();
+            }
+
             if let Err(e) = output_manager.write_results(&results) {
                 eprintln!("Failed to write results: {}", e);
             }

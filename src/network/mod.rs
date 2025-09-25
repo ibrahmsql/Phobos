@@ -5,6 +5,7 @@ pub mod packet;
 pub mod protocol;
 pub mod socket;
 pub mod stealth;
+pub mod phobos_modes;
 
 use serde::{Deserialize, Serialize};
 
