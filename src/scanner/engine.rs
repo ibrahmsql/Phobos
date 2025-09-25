@@ -1,4 +1,4 @@
-//! Main scanning engine implementation
+//! Main scanning engine implementation 
 
 use crate::config::ScanConfig;
 use crate::network::{
@@ -13,9 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Semaphore};
-use tokio::time::timeout;
 use futures::stream::{FuturesUnordered, StreamExt};
-// use rayon::prelude::*; // Unused import removed
+use tokio::net::TcpStream;
+use std::net::Shutdown;
 
 /// Main scanning engine
 #[derive(Debug, Clone)]
@@ -319,35 +319,14 @@ impl ScanEngine {
         })
     }
     
-    /// Ultra-fast TCP scanning with connection pooling
-    async fn scan_tcp_high_performance(&self, _tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
-        let socket_addr = SocketAddr::new(IpAddr::V4(target), port);
-        
-        // Try to reuse existing connection from pool
-        {
-            let mut pool = self.connection_pool.lock().await;
-            if let Some(stream) = pool.get_mut(&socket_addr) {
-                // Test if connection is still alive
-                if stream.try_write(&[]).is_ok() {
-                    return Ok(PortState::Open);
-                } else {
-                    pool.remove(&socket_addr);
-                }
-            }
-        }
-        
-        // Create new connection with ultra-short timeout
-        let timeout_duration = Duration::from_millis(50); // Ultra-fast timeout
-        
-        match timeout(timeout_duration, tokio::net::TcpStream::connect(socket_addr)).await {
-            Ok(Ok(stream)) => {
-                // Store connection in pool for reuse
-                let mut pool = self.connection_pool.lock().await;
-                pool.insert(socket_addr, stream);
-                Ok(PortState::Open)
-            }
-            Ok(Err(_)) | Err(_) => Ok(PortState::Closed),
-        }
+    /// Ultra-fast TCP scanning with confirmation to avoid false positives
+    async fn scan_tcp_high_performance(&self, tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
+        let target_ip = IpAddr::V4(target);
+        // Perform connection check with confirmation attempts to eliminate false positives
+        let attempts = self.config.confirm_open_attempts.max(1);
+        let delay = Duration::from_millis(self.config.confirm_delay_ms);
+        let is_open = tcp_scanner.confirm_open(target_ip, port, attempts, delay).await?;
+        Ok(if is_open { PortState::Open } else { PortState::Closed })
     }
     
     /// Optimize batch size based on system performance and network conditions

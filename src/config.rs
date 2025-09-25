@@ -53,6 +53,12 @@ pub struct ScanConfig {
     
     /// Maximum response time for adaptive tuning
     pub max_response_time: u64,
+    
+    /// Number of confirmations required for an open TCP port
+    pub confirm_open_attempts: u8,
+    
+    /// Delay between confirmation attempts in milliseconds
+    pub confirm_delay_ms: u64,
 }
 
 impl Default for ScanConfig {
@@ -73,6 +79,8 @@ impl Default for ScanConfig {
             adaptive_learning: true, // Enable adaptive learning for performance optimization
             min_response_time: 50, // 50ms minimum response time
             max_response_time: 3000, // 3s maximum response time
+            confirm_open_attempts: 2, // Double-check TCP opens to eliminate false positives
+            confirm_delay_ms: 5, // Small delay between confirmations
         }
     }
 }

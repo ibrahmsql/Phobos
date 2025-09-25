@@ -28,6 +28,9 @@ pub enum ScanError {
     #[error("Timeout error: {0}")]
     TimeoutError(String),
     
+    #[error("Timeout: {0}")]
+    Timeout(String),
+    
     #[error("Configuration error: {0}")]
     ConfigError(String),
     

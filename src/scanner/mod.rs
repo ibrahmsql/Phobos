@@ -2,6 +2,7 @@
 
 pub mod engine;
 pub mod techniques;
+pub mod ultra_engine;
 
 use crate::config::ScanConfig;
 use crate::network::{PortResult, PortState};
@@ -10,6 +11,7 @@ use std::net::Ipv4Addr;
 use std::time::{Duration, Instant};
 
 pub use engine::ScanEngine;
+pub use ultra_engine::UltraEngine;
 
 /// Complete scan result containing all discovered information
 #[derive(Debug, Clone, Serialize, Deserialize)]

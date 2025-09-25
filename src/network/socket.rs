@@ -220,6 +220,24 @@ impl TcpConnectScanner {
         
         Ok(result)
     }
+
+    /// Confirm an open TCP port by repeating the connect sequence.
+    /// Returns true only if all confirmation attempts succeed.
+    pub async fn confirm_open(&self, target: IpAddr, port: u16, attempts: u8, delay: Duration) -> crate::Result<bool> {
+        if attempts <= 1 {
+            return self.scan_port(target, port).await;
+        }
+        for i in 0..attempts {
+            let ok = self.scan_port(target, port).await?;
+            if !ok {
+                return Ok(false);
+            }
+            if i + 1 < attempts {
+                tokio::time::sleep(delay).await;
+            }
+        }
+        Ok(true)
+    }
     
     /// High-performance batch port scanning
     pub async fn scan_ports_batch(&self, target: IpAddr, ports: &[u16]) -> crate::Result<Vec<(u16, bool)>> {

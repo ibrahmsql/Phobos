@@ -777,6 +777,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adaptive_learning: base_config.adaptive_learning,
         min_response_time: base_config.min_response_time,
         max_response_time: base_config.max_response_time,
+        confirm_open_attempts: base_config.confirm_open_attempts,
+        confirm_delay_ms: base_config.confirm_delay_ms,
     };
     
     // Show batch size info with colors and special handling for --all
@@ -871,10 +873,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     
-    // Create and run scanner
-    let engine = ScanEngine::new(scan_config.clone()).await?;
+    // Create and run scanner - Use UltraEngine for maximum performance!
+    let engine = phobos::scanner::UltraEngine::new(scan_config.clone()).await?;
     
-    println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.1.1".bright_green().bold());
+    println!("{} {} {}", "⚡ Starting Phobos".bright_green().bold(), "v1.1.1".bright_green().bold(), "[ULTRA MODE]".bright_red().bold());
     println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
     println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
     println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());
