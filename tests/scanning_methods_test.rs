@@ -16,7 +16,7 @@ async fn test_general_scan_without_specific_ports() {
     let engine = ScanEngine::new(config).await.expect("Engine oluşturulamadı");
     
     // Localhost'u tara
-    let target = Ipv4Addr::new(127, 0, 0, 1);
+    let _target = Ipv4Addr::new(127, 0, 0, 1);
     
     let scan_result = timeout(
         Duration::from_secs(30),

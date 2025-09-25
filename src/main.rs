@@ -521,6 +521,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Enable advanced OS fingerprinting and detection")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("update")
+                .long("update")
+                .help("Update Phobos to the latest version from GitHub")
+                .action(ArgAction::SetTrue),
+        )
 
 
         .get_matches();
@@ -554,6 +560,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         adjust_ulimit_size(Some(*ulimit));
     }
     
+    // Handle update
+    if matches.get_flag("update") {
+        println!("{}", "🚀 Updating Phobos to latest version...".bright_blue().bold());
+        match update_phobos().await {
+            Ok(_) => {
+                println!("{}", "✅ Phobos updated successfully!".bright_green().bold());
+                println!("{}", "🔄 Please restart your terminal or run 'source ~/.bashrc'".bright_yellow());
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{} {}", "❌ Update failed:".bright_red().bold(), e);
+                process::exit(1);
+            }
+        }
+    }
+
     // Handle system check
     if matches.get_flag("system-check") {
         println!("{}", "System Check Results:".bright_yellow().bold());
@@ -1190,6 +1212,137 @@ fn run_nmap_scan(target: &str, open_ports: &[u16], nmap_args: Option<&String>) {
 
 
 
+
+/// Update Phobos to the latest version from GitHub
+async fn update_phobos() -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::Command;
+    use std::fs;
+    use std::path::Path;
+    
+    println!("{}", "[1/6] Fetching latest release info...".bright_blue());
+    
+    // Get latest release info from GitHub API
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/ibrahmsql/phobos/releases/latest")
+        .header("User-Agent", "Phobos-Updater")
+        .send()
+        .await?;
+    
+    let release_info: serde_json::Value = response.json().await?;
+    let latest_version = release_info["tag_name"].as_str().unwrap_or("unknown");
+    let tarball_url = release_info["tarball_url"].as_str().unwrap_or("");
+    
+    println!("{} {}", "[2/6] Latest version:".bright_blue(), latest_version.bright_green().bold());
+    
+    // Create temp directory
+    let temp_dir = std::env::temp_dir().join("phobos_update");
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir)?;
+    }
+    fs::create_dir_all(&temp_dir)?;
+    
+    println!("{}", "[3/6] Downloading source code...".bright_blue());
+    
+    // Download tarball
+    let tarball_response = client.get(tarball_url).send().await?;
+    let tarball_path = temp_dir.join("phobos.tar.gz");
+    let mut file = std::fs::File::create(&tarball_path)?;
+    let content = tarball_response.bytes().await?;
+    std::io::Write::write_all(&mut file, &content)?;
+    
+    println!("{}", "[4/6] Extracting and building...".bright_blue());
+    
+    // Extract tarball
+    let extract_output = Command::new("tar")
+        .args(&["-xzf", "phobos.tar.gz"])
+        .current_dir(&temp_dir)
+        .output()?;
+    
+    if !extract_output.status.success() {
+        return Err("Failed to extract tarball".into());
+    }
+    
+    // Find extracted directory
+    let entries = fs::read_dir(&temp_dir)?;
+    let mut source_dir = None;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() && path.file_name().unwrap().to_str().unwrap().starts_with("ibrahmsql-Phobos") {
+            source_dir = Some(path);
+            break;
+        }
+    }
+    
+    let source_dir = source_dir.ok_or("Could not find extracted source directory")?;
+    
+    println!("{}", "[5/6] Compiling with optimizations...".bright_blue());
+    
+    // Build release version
+    let build_output = Command::new("cargo")
+        .args(&["build", "--release"])
+        .current_dir(&source_dir)
+        .output()?;
+    
+    if !build_output.status.success() {
+        let stderr = String::from_utf8_lossy(&build_output.stderr);
+        return Err(format!("Build failed: {}", stderr).into());
+    }
+    
+    println!("{}", "[6/6] Installing globally...".bright_blue());
+    
+    // Install to global location
+    let binary_path = source_dir.join("target/release/phobos");
+    
+    // Try different install locations
+    let home_path = format!("{}/.local/bin/phobos", std::env::var("HOME").unwrap_or_default());
+    let install_paths = vec![
+        "/usr/local/bin/phobos",
+        "/opt/homebrew/bin/phobos", // macOS Homebrew
+        &home_path,
+    ];
+    
+    let mut installed = false;
+    for install_path in install_paths {
+        if let Some(parent) = Path::new(install_path).parent() {
+            if parent.exists() {
+                match fs::copy(&binary_path, install_path) {
+                    Ok(_) => {
+                        // Make executable
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = fs::metadata(install_path)?.permissions();
+                            perms.set_mode(0o755);
+                            fs::set_permissions(install_path, perms)?;
+                        }
+                        
+                        println!("{} {}", "✅ Installed to:".bright_green(), install_path.bright_white().bold());
+                        installed = true;
+                        break;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
+    }
+    
+    if !installed {
+        // Fallback: copy to current directory
+        fs::copy(&binary_path, "./phobos")?;
+        println!("{}", "✅ Binary copied to current directory as './phobos'".bright_green());
+        println!("{}", "💡 Move it to your PATH manually: sudo mv ./phobos /usr/local/bin/".bright_yellow());
+    }
+    
+    // Cleanup
+    fs::remove_dir_all(&temp_dir)?;
+    
+    println!();
+    println!("{} {}", "🎉 Update completed!".bright_green().bold(), "Phobos is now up to date.".bright_white());
+    
+    Ok(())
+}
 
 /// Compare port lists and show differences for debugging
 fn compare_port_lists(current_ports: &[u16], reference_name: &str, reference_ports: &[u16]) {

@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::time::timeout;
 use phobos::{
     config::ScanConfig,
-    network::{ScanTechnique, PortState},
+    network::ScanTechnique,
     scanner::engine::ScanEngine,
 };
 
