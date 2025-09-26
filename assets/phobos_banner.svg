@@ -1,75 +1,112 @@
 <svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="fireGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ff0000">
-        <animate attributeName="stop-color" values="#ff0000;#ff4500;#ff8c00;#ff0000" dur="2s" repeatCount="indefinite"/>
+    <!-- Divine Fire Gradient -->
+    <radialGradient id="divineGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#ffd700">
+        <animate attributeName="stop-color" values="#ffd700;#ff6b35;#dc143c;#ffd700" dur="3s" repeatCount="indefinite"/>
       </stop>
-      <stop offset="50%" style="stop-color:#ff4500">
-        <animate attributeName="stop-color" values="#ff4500;#ff8c00;#ffd700;#ff4500" dur="1.5s" repeatCount="indefinite"/>
+      <stop offset="40%" style="stop-color:#ff4500">
+        <animate attributeName="stop-color" values="#ff4500;#dc143c;#8b0000;#ff4500" dur="2.5s" repeatCount="indefinite"/>
       </stop>
-      <stop offset="100%" style="stop-color:#ff8c00">
-        <animate attributeName="stop-color" values="#ff8c00;#ffd700;#ff0000;#ff8c00" dur="1.8s" repeatCount="indefinite"/>
+      <stop offset="100%" style="stop-color:#8b0000">
+        <animate attributeName="stop-color" values="#8b0000;#4b0000;#ff4500;#8b0000" dur="2s" repeatCount="indefinite"/>
       </stop>
+    </radialGradient>
+    
+    <!-- Ancient Gold Gradient -->
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ffd700"/>
+      <stop offset="50%" style="stop-color:#ffb347"/>
+      <stop offset="100%" style="stop-color:#daa520"/>
     </linearGradient>
     
-    <filter id="textGlow">
-      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+    <!-- Divine Glow -->
+    <filter id="divineGlow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
       <feMerge> 
         <feMergeNode in="coloredBlur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    
+    <!-- Shadow for depth -->
+    <filter id="textShadow">
+      <feDropShadow dx="3" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.8"/>
+    </filter>
   </defs>
 
-  <rect width="800" height="200" fill="#0d1117"/>
+  <!-- Ancient stone background -->
+  <rect width="800" height="200" fill="#1a1a2e"/>
   
-  <!-- Main title -->
-  <text x="400" y="80" font-family="'SF Mono', 'Monaco', monospace" font-size="48" font-weight="bold" 
-        text-anchor="middle" fill="url(#fireGrad)" filter="url(#textGlow)">
+  <!-- Divine aura background -->
+  <ellipse cx="400" cy="100" rx="300" ry="80" fill="url(#divineGrad)" opacity="0.1">
+    <animate attributeName="opacity" values="0.05;0.15;0.05" dur="4s" repeatCount="indefinite"/>
+  </ellipse>
+  
+  <!-- Main title with divine power -->
+  <text x="400" y="75" font-family="'Trajan Pro', 'Times New Roman', serif" font-size="52" font-weight="bold" 
+        text-anchor="middle" fill="url(#divineGrad)" filter="url(#divineGlow)" style="letter-spacing: 6px;">
+    ΦΟΒΟΣ
+    <animate attributeName="opacity" values="0.9;1;0.9" dur="3s" repeatCount="indefinite"/>
+  </text>
+  
+  <!-- Latin title -->
+  <text x="400" y="100" font-family="'Trajan Pro', 'Times New Roman', serif" font-size="24" font-weight="bold" 
+        text-anchor="middle" fill="url(#goldGrad)" filter="url(#textShadow)" style="letter-spacing: 2px;">
     PHOBOS
   </text>
   
-  <!-- Subtitle -->
-  <text x="400" y="110" font-family="'SF Mono', 'Monaco', monospace" font-size="14" 
-        text-anchor="middle" fill="#58a6ff" opacity="0.9">
-    THE GOD OF FEAR • FORGED IN RUST ⚡
+  <!-- Divine subtitle -->
+  <text x="400" y="125" font-family="'Trajan Pro', 'Times New Roman', serif" font-size="12" 
+        text-anchor="middle" fill="#daa520" opacity="0.9" style="letter-spacing: 1px;">
+    DEUS TERRORIS • FILIUS MARTIS • RUST POTENTIA
+    <animate attributeName="opacity" values="0.7;1;0.7" dur="5s" repeatCount="indefinite"/>
   </text>
   
-  <!-- Port scanner subtitle -->
-  <text x="400" y="130" font-family="'SF Mono', 'Monaco', monospace" font-size="12" 
-        text-anchor="middle" fill="#f78166" opacity="0.8">
-    BLAZINGLY FAST PORT SCANNER
+  <!-- English translation -->
+  <text x="400" y="145" font-family="'Georgia', serif" font-size="10" 
+        text-anchor="middle" fill="#b8860b" opacity="0.8" style="font-style: italic;">
+    God of Fear • Son of Mars • Forged in Rust
   </text>
   
-  <!-- Scanning dots animation -->
-  <g id="scanDots">
-    <circle cx="200" cy="160" r="2" fill="#7ee787">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="1s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="250" cy="160" r="2" fill="#f78166">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.2s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="300" cy="160" r="2" fill="#d2a8ff">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="0.8s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="500" cy="160" r="2" fill="#79c0ff">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.1s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="550" cy="160" r="2" fill="#7ee787">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="0.9s" repeatCount="indefinite"/>
-    </circle>
-    <circle cx="600" cy="160" r="2" fill="#f78166">
-      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.3s" repeatCount="indefinite"/>
-    </circle>
+  <!-- Divine symbols animation -->
+  <g id="divineSymbols">
+    <!-- Ancient runes/symbols representing network nodes -->
+    <text x="150" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#daa520" opacity="0.6">
+      ⚔️
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite"/>
+    </text>
+    <text x="220" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#ff6b35" opacity="0.6">
+      ⛡️
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite"/>
+    </text>
+    <text x="290" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#ffd700" opacity="0.6">
+      ⚙️
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="1.8s" repeatCount="indefinite"/>
+    </text>
+    <text x="510" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#dc143c" opacity="0.6">
+      🔱
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="2.2s" repeatCount="indefinite"/>
+    </text>
+    <text x="580" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#b8860b" opacity="0.6">
+      ⚡
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="1.3s" repeatCount="indefinite"/>
+    </text>
+    <text x="650" y="170" font-family="'Times New Roman', serif" font-size="16" fill="#ff4500" opacity="0.6">
+      🔥
+      <animate attributeName="opacity" values="0.4;1;0.4" dur="1.7s" repeatCount="indefinite"/>
+    </text>
   </g>
   
-  <!-- Terminal prompt -->
-  <text x="50" y="180" font-family="'SF Mono', 'Monaco', monospace" font-size="11" fill="#7d8590">
-    $ phobos target.com -p 1-65535 --fast
+  <!-- Divine command inscription -->
+  <text x="50" y="185" font-family="'Courier New', monospace" font-size="11" fill="#daa520" opacity="0.9">
+    » phobos invoke-fear --target mortals.net --divine-wrath
+    <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite"/>
   </text>
   
-  <!-- Blinking cursor -->
-  <rect x="285" y="170" width="8" height="12" fill="#58a6ff">
+  <!-- Divine cursor -->
+  <text x="480" y="185" font-family="'Courier New', monospace" font-size="11" fill="#ffd700">
+    ░
     <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
-  </rect>
+  </text>
 </svg>
