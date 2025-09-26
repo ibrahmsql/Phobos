@@ -119,10 +119,18 @@ pub struct ScriptConfig {
 impl Default for ScriptConfig {
     fn default() -> Self {
         Self {
-            directories: vec![
-                PathBuf::from("~/.phobos/scripts"),
-                PathBuf::from("/usr/share/phobos/scripts"),
-            ],
+            directories: {
+                let mut dirs = Vec::new();
+                // Add user script directory
+                if let Some(home) = dirs::home_dir() {
+                    dirs.push(home.join(".phobos/scripts"));
+                }
+                // Add system script directory
+                dirs.push(PathBuf::from("/usr/share/phobos/scripts"));
+                // Add current directory scripts
+                dirs.push(PathBuf::from("./scripts"));
+                dirs
+            },
             tags: None,
             ports: None,
             max_concurrent: 10,

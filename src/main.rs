@@ -361,7 +361,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .arg(
             Arg::new("ports-only")
                 .long("ports-only")
-                .help("Only scan ports, don't run Nmap scripts")
+                .help("Only scan ports, don't run scripts or Nmap")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-nmap")
+                .long("no-nmap")
+                .help("Disable automatic Nmap execution after port scan")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -459,7 +465,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .arg(
             Arg::new("interface")
-                .short('i')
                 .long("interface")
                 .value_name("IFACE")
                 .help("Network interface to use for scanning"),
@@ -1144,9 +1149,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             
             
-            // Run Nmap if nmap-args are provided
-            if let Some(nmap_args) = matches.get_one::<String>("nmap-args") {
-                run_nmap_scan(&target, &open_ports, Some(nmap_args));
+            // Run Nmap for detailed analysis (unless disabled)
+            if !matches.get_flag("ports-only") && !matches.get_flag("no-nmap") && !open_ports.is_empty() {
+                // Run Nmap with custom args if provided, otherwise use default detailed scan
+                let nmap_args = matches.get_one::<String>("nmap-args");
+                run_nmap_scan(&target, &open_ports, nmap_args);
             }
         }
         Err(e) => {
