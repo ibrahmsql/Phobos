@@ -1,0 +1,75 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fireGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff0000">
+        <animate attributeName="stop-color" values="#ff0000;#ff4500;#ff8c00;#ff0000" dur="2s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="50%" style="stop-color:#ff4500">
+        <animate attributeName="stop-color" values="#ff4500;#ff8c00;#ffd700;#ff4500" dur="1.5s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%" style="stop-color:#ff8c00">
+        <animate attributeName="stop-color" values="#ff8c00;#ffd700;#ff0000;#ff8c00" dur="1.8s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    
+    <filter id="textGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="800" height="200" fill="#0d1117"/>
+  
+  <!-- Main title -->
+  <text x="400" y="80" font-family="'SF Mono', 'Monaco', monospace" font-size="48" font-weight="bold" 
+        text-anchor="middle" fill="url(#fireGrad)" filter="url(#textGlow)">
+    PHOBOS
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="400" y="110" font-family="'SF Mono', 'Monaco', monospace" font-size="14" 
+        text-anchor="middle" fill="#58a6ff" opacity="0.9">
+    THE GOD OF FEAR • FORGED IN RUST ⚡
+  </text>
+  
+  <!-- Port scanner subtitle -->
+  <text x="400" y="130" font-family="'SF Mono', 'Monaco', monospace" font-size="12" 
+        text-anchor="middle" fill="#f78166" opacity="0.8">
+    BLAZINGLY FAST PORT SCANNER
+  </text>
+  
+  <!-- Scanning dots animation -->
+  <g id="scanDots">
+    <circle cx="200" cy="160" r="2" fill="#7ee787">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="250" cy="160" r="2" fill="#f78166">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="300" cy="160" r="2" fill="#d2a8ff">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="500" cy="160" r="2" fill="#79c0ff">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="550" cy="160" r="2" fill="#7ee787">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="0.9s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="600" cy="160" r="2" fill="#f78166">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="1.3s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Terminal prompt -->
+  <text x="50" y="180" font-family="'SF Mono', 'Monaco', monospace" font-size="11" fill="#7d8590">
+    $ phobos target.com -p 1-65535 --fast
+  </text>
+  
+  <!-- Blinking cursor -->
+  <rect x="285" y="170" width="8" height="12" fill="#58a6ff">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+</svg>
