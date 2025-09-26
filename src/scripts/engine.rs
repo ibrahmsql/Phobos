@@ -157,72 +157,10 @@ impl ScriptEngine {
         Ok(metadata)
     }
 
-    /// Create an example script for users
-    fn create_example_script(dir: &PathBuf) -> Result<()> {
-        let example_script = dir.join("example_banner_grab.py");
-        
-        let script_content = r#"#!/usr/bin/env python3
-# @description: Simple banner grabbing script
-# @tags: banner,info,safe
-# @ports: 21,22,23,25,53,80,110,143,443,993,995
-# @timeout: 30
-# @priority: 5
-
-import sys
-import socket
-import argparse
-
-def grab_banner(host, port, timeout=10):
-    """Grab banner from a service"""
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        result = sock.connect_ex((host, port))
-        
-        if result == 0:
-            # Send a generic HTTP request for web services
-            if port in [80, 443, 8080, 8443]:
-                sock.send(b"HEAD / HTTP/1.1\r\nHost: " + host.encode() + b"\r\n\r\n")
-            
-            # Try to receive banner
-            banner = sock.recv(1024).decode('utf-8', errors='ignore').strip()
-            if banner:
-                print(f"[{host}:{port}] Banner: {banner}")
-            else:
-                print(f"[{host}:{port}] No banner received")
-        else:
-            print(f"[{host}:{port}] Connection failed")
-        
-        sock.close()
-    except Exception as e:
-        print(f"[{host}:{port}] Error: {e}")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Banner grabbing script')
-    parser.add_argument('host', help='Target host')
-    parser.add_argument('ports', help='Comma-separated ports')
-    
-    args = parser.parse_args()
-    
-    ports = [int(p.strip()) for p in args.ports.split(',') if p.strip().isdigit()]
-    
-    for port in ports:
-        grab_banner(args.host, port)
-"#;
-        
-        std::fs::write(&example_script, script_content)
-            .map_err(|e| ScanError::ConfigError(format!("Failed to create example script: {}", e)))?;
-        
-        // Make script executable on Unix systems
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&example_script)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&example_script, perms)?;
-        }
-        
-        info!("Created example script: {:?}", example_script);
+    /// Create script directory (no scripts, just directory)
+    fn create_example_script(_dir: &PathBuf) -> Result<()> {
+        // Directory is already created, no need to create any files
+        debug!("Script directory ready for user scripts");
         Ok(())
     }
 
