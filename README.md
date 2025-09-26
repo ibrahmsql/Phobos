@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Phobos Animated Banner](assets/phobos_banner.svg)
+![Phobos Animated Banner](assets/phobos_banner.png)
 
 ![Phobos Logo](https://img.shields.io/badge/Phobos-Port%20Scanner-red?style=for-the-badge&logo=rust)
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
