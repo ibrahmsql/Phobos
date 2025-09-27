@@ -61,8 +61,8 @@ impl Default for ScanConfig {
             target: "127.0.0.1".to_string(),
             ports: (1..=1000).collect(),
             technique: ScanTechnique::Connect,
-            threads: 4500, // High concurrent connection count
-            timeout: 3000, // Reasonable timeout for reliable detection
+            threads: 2000, // Moderate concurrent connection count for accuracy
+            timeout: 6000, // Higher timeout for reliable detection under load
             rate_limit: 10_000_000, // 10M packets per second - Ultra-fast scanning
             stealth_options: None,
             timing_template: 3, // Default timing template
@@ -133,16 +133,21 @@ impl ScanConfig {
         let memory_factor = if self.ports.len() > 10000 { 2 } else { 1 };
         
         // Calculate base batch considering CPU cores and memory
-        let base_batch = std::cmp::max(
-            50, // Minimum batch size
-            std::cmp::min(
-                (self.rate_limit as usize) / (self.threads * cpu_cores),
-                self.ports.len() / (self.threads * memory_factor)
+        let base_batch = if self.ports.len() > 60000 {
+            // Full port range - much smaller batches for accuracy
+            std::cmp::max(100, self.ports.len() / (self.threads * 4))
+        } else {
+            std::cmp::max(
+                50, // Minimum batch size
+                std::cmp::min(
+                    (self.rate_limit as usize) / (self.threads * cpu_cores),
+                    self.ports.len() / (self.threads * memory_factor)
+                )
             )
-        );
+        };
         
-        // Cap at reasonable maximum to prevent memory issues
-        std::cmp::min(base_batch, 5000)
+        // Cap at more conservative maximum for better accuracy
+        std::cmp::min(base_batch, 500)
     }
     
     /// Load configuration from TOML file

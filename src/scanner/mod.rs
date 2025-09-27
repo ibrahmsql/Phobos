@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 use std::time::{Duration, Instant};
 
-pub use engine::ScanEngine;
+pub use engine::{ScanEngine, StreamingScanEngine};
 
 /// Complete scan result containing all discovered information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +101,7 @@ impl ScanResult {
         self.port_results.sort_by_key(|r| r.port);
     }
 }
+
 
 /// Scan statistics for performance monitoring
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -277,9 +278,10 @@ pub type ResultCollector = std::sync::Arc<tokio::sync::Mutex<ScanResult>>;
 
 /// Create batches from port list for parallel processing
 pub fn create_batches(ports: Vec<u16>, target: Ipv4Addr, batch_size: usize) -> Vec<ScanBatch> {
-    ports
-        .chunks(batch_size)
-        .enumerate()
-        .map(|(id, chunk)| ScanBatch::new(chunk.to_vec(), target, id))
-        .collect()
-}
+        ports
+            .chunks(batch_size)
+            .enumerate()
+            .map(|(id, chunk)| ScanBatch::new(chunk.to_vec(), target, id))
+            .collect()
+    }
+

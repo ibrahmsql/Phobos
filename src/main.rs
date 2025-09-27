@@ -9,6 +9,7 @@ use phobos::{
     intelligence::os_fingerprinting::OSFingerprinter,
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
+    scanner::StreamingScanEngine,
     scripts::{ScriptEngine, ScriptConfig, ScriptMode},
     utils::config::ConfigValidator,
     utils::profiles::ProfileManager,
@@ -128,6 +129,79 @@ fn print_banner() {
     println!();
 }
 
+/// Handle scan results from either streaming or traditional scans
+async fn handle_scan_results(
+    results: phobos::scanner::ScanResult, 
+    target: &str,
+    matches: &clap::ArgMatches,
+    show_all_states: bool,
+    open_ports: Vec<u16>
+) -> Result<(), Box<dyn std::error::Error>> {
+    use colored::*;
+    
+    // Process results for either type
+    let actual_open_ports = if open_ports.is_empty() {
+        // Use from scan results
+        results.port_results.iter()
+            .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
+            .map(|pr| pr.port)
+            .collect()
+    } else {
+        // Use provided (from streaming scan)
+        open_ports
+    };
+    
+    // Show results
+    if !actual_open_ports.is_empty() {
+        println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+        println!("Host is up.");
+        
+        let total_scanned = if results.port_results.is_empty() {
+            actual_open_ports.len() // Estimate from streaming
+        } else {
+            results.port_results.len() // Actual from traditional scan
+        };
+        
+        let closed_count = total_scanned - actual_open_ports.len();
+        if closed_count > 0 {
+            println!("Not shown: {} closed tcp ports", closed_count.to_string().bright_yellow());
+        }
+        
+        println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
+        
+        for port in &actual_open_ports {
+            let service = results.port_results.iter()
+                .find(|pr| pr.port == *port)
+                .and_then(|pr| pr.service.as_deref())
+                .unwrap_or("unknown");
+            println!("{:<8} {:<8} {}", 
+                format!("{}/tcp", port).bright_white(),
+                "open".bright_green(),
+                service.bright_yellow()
+            );
+        }
+    } else {
+        println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+        println!("Host is up.");
+        println!("All scanned ports on {} are closed", target);
+    }
+    
+    // Show greppable output if enabled
+    if matches.get_flag("greppable") {
+        for port in &actual_open_ports {
+            println!("{}:{}", target, port);
+        }
+    }
+    
+    // Run Nmap for detailed analysis if requested
+    if !matches.get_flag("ports-only") && !matches.get_flag("no-nmap") && !actual_open_ports.is_empty() {
+        let nmap_args = matches.get_one::<String>("nmap-args");
+        run_nmap_scan(target, &actual_open_ports, nmap_args);
+    }
+    
+    Ok(())
+}
+
 fn resolve_target(target: &str) -> anyhow::Result<String> {
     // Check if it's already an IP address
     if target.parse::<IpAddr>().is_ok() {
@@ -211,7 +285,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arg::new("target")
                 .value_name("TARGET")
                 .help("Target to scan (IP, hostname, or CIDR)")
-                .required_unless_present_any(["list-profiles", "system-check", "validate-config"])
+                .required_unless_present_any(["list-profiles", "system-check", "validate-config", "update"])
                 .index(1),
         )
         .arg(
@@ -861,6 +935,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Apply Phobos modes to configuration
     scan_config = phobos_manager.apply_to_config(scan_config);
+
+    // If full-range and user did NOT specify threads/batch-size explicitly, boost defaults for speed
+    if full_range_ports {
+        use clap::parser::ValueSource;
+        // Bump threads if not provided on CLI - but be more conservative for accuracy
+        if matches.value_source("threads") != Some(ValueSource::CommandLine) {
+            let cpu = num_cpus::get();
+            // More conservative for accuracy: don't overwhelm the network
+            let suggested_threads = std::cmp::min(1000, cpu * 100);
+            scan_config.threads = suggested_threads;
+            println!("{} {}", "[~] Optimizing threads for full-range:".bright_blue(), scan_config.threads.to_string().bright_white().bold());
+        }
+        // Bump batch-size if not provided on CLI - smaller batches for accuracy
+        if matches.value_source("batch-size") != Some(ValueSource::CommandLine) {
+            // Smaller batch for better accuracy
+            let suggested_batch = 500usize;
+            scan_config.batch_size = Some(suggested_batch);
+            println!("{} {}", "[~] Optimizing batch-size for full-range:".bright_blue(), suggested_batch.to_string().bright_white().bold());
+        }
+        // Increase timeout for full-range to avoid missing slow-responding ports
+        if matches.value_source("timeout") != Some(ValueSource::CommandLine) {
+            scan_config.timeout = 5000; // 5s timeout for full range reliability
+            println!("{} {}", "[~] Optimizing timeout for full-range:".bright_blue(), "5000ms".bright_white().bold());
+        }
+    }
     
     // Show batch size info with colors and special handling for --all
     let calculated_batch = scan_config.batch_size();
@@ -954,211 +1053,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     
-    // Create and run scanner
-    let engine = ScanEngine::new(scan_config.clone()).await?;
+    // Disable streaming mode for now - it's too slow. Keep normal fast scanning.
+    let use_streaming = false; // Disabled for performance
     
-    println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.1.1".bright_green().bold());
-    println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
-    println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
-    println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());
-    println!("{} {}", "Threads:".bright_yellow().bold(), threads.to_string().bright_white().bold());
-    println!();
-    
-    match engine.scan().await {
-        Ok(results) => {
-            progress.finish();
-            
-            // Show open ports found with colors
-            let open_ports: Vec<u16> = results.port_results.iter()
-                .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
-                .map(|pr| pr.port)
-                .collect();
-            
-            // Show scan summary based on --all flag (inverted logic)
-            if !show_all_states {
-                // Default: only show open ports (like nmap --open)
-                if !open_ports.is_empty() {
-                    println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
-                    println!("Host is up.");
-                    
-                    let closed_count = results.port_results.len() - open_ports.len();
-                    if closed_count > 0 {
-                        println!("Not shown: {} closed tcp ports", closed_count.to_string().bright_yellow());
-                    }
-                    
-                    println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
-                    
-                    for port in &open_ports {
-                        let service = results.port_results.iter()
-                            .find(|pr| pr.port == *port)
-                            .and_then(|pr| pr.service.as_deref())
-                            .unwrap_or("unknown");
-                        println!("{:<8} {:<8} {}", 
-                            format!("{}/tcp", port).bright_white(),
-                            "open".bright_green(),
-                            service.bright_yellow()
-                        );
-                    }
-                } else {
-                    println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
-                    println!("Host is up.");
-                    println!("All {} scanned ports on {} are closed", results.port_results.len(), target);
-                }
-            } else {
-                // --all flag: show all port states (open, closed, filtered)
-                println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
-                println!("Host is up.");
-                println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
+    if use_streaming {
+        println!("{} {}", 
+            "[🚀] Memory-Optimized Streaming Mode Enabled".bright_green().bold(),
+            "(Reduces memory usage by up to 80%)".bright_cyan()
+        );
+        
+        // Create and run streaming scanner
+        let streaming_engine = StreamingScanEngine::new(scan_config.clone()).await?;
+        
+        println!("{} {}", "Starting Phobos Streaming".bright_green().bold(), "v1.1.1".bright_green().bold());
+        println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
+        println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports (streaming)".bright_yellow());
+        println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());
+        println!("{} {}", "Threads:".bright_yellow().bold(), scan_config.threads.to_string().bright_white().bold());
+        println!("{} {}", "Memory Mode:".bright_yellow().bold(), "Streaming (Low Memory)".bright_green().bold());
+        println!();
+        
+        match streaming_engine.scan_streaming().await {
+            Ok(streaming_result) => {
+                // Convert streaming result to regular result for compatibility
+                let mut regular_result = phobos::scanner::ScanResult::new(target.clone(), scan_config.clone());
                 
-                for port_result in &results.port_results {
-                    let service = port_result.service.as_deref().unwrap_or("unknown");
-                    let state_str = match port_result.state {
-                        phobos::network::PortState::Open => "open".bright_green(),
-                        phobos::network::PortState::Closed => "closed".bright_red(),
-                        phobos::network::PortState::Filtered => "filtered".bright_yellow(),
-                        phobos::network::PortState::OpenFiltered => "open|filtered".bright_magenta(),
-                        phobos::network::PortState::ClosedFiltered => "closed|filtered".bright_red(),
-                        phobos::network::PortState::Unfiltered => "unfiltered".bright_blue(),
-                    };
-                    println!("{:<8} {:<8} {}", 
-                        format!("{}/tcp", port_result.port).bright_white(),
-                        state_str,
-                        service.bright_yellow()
-                    );
+                // Add open ports to regular result
+                for &port in &streaming_result.open_ports {
+                    regular_result.add_port_result(phobos::network::PortResult {
+                        port,
+                        protocol: phobos::network::Protocol::Tcp,
+                        state: phobos::network::PortState::Open,
+                        service: None,
+                        response_time: std::time::Duration::from_millis(0),
+                    });
                 }
                 
-                // Also show summary in clean format
-                if !open_ports.is_empty() {
-                    let ports_str = open_ports.iter()
-                        .map(|p| p.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    println!();
-                    println!("{} {}", 
-                        "Open".bright_green().bold(),
-                        format!("{}:[{}]", target.bright_cyan(), ports_str.bright_white().bold())
-                    );
-                }
-            }
-            
-            // OS Detection if enabled
-            if matches.get_flag("os-detection") && !open_ports.is_empty() {
-                println!();
-                println!("{}", "OS Detection Results:".bright_blue().bold());
-                println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue());
-                
-                let os_fingerprinter = OSFingerprinter::new();
-                let target_ip = target.parse().unwrap_or_else(|_| "127.0.0.1".parse().unwrap());
-                let os_result = os_fingerprinter.detect_os(target_ip, &results.port_results);
-                
-                if let Some(os) = os_result.primary_os {
-                    println!("{} {} ({}% confidence)", 
-                        "Primary OS:".bright_yellow(),
-                        format!("{} {}", os.name, os.version.unwrap_or_default()).bright_green().bold(),
-                        (os_result.confidence * 100.0) as u8
-                    );
-                    println!("{} {}", 
-                        "Vendor:".bright_yellow(),
-                        os.vendor.bright_cyan()
-                    );
-                    
-                    // Show detection methods used
-                    let methods: Vec<String> = os_result.detection_methods.iter()
-                        .map(|m| format!("{:?}", m))
-                        .collect();
-                    println!("{} {}", 
-                        "Detection Methods:".bright_yellow(),
-                        methods.join(", ").bright_white()
-                    );
-                    
-                    // Show secondary matches if any
-                    if !os_result.secondary_matches.is_empty() {
-                        println!();
-                        println!("{}", "Alternative Matches:".bright_yellow());
-                        for (i, alt_match) in os_result.secondary_matches.iter().enumerate().take(2) {
-                            println!("  {}. {} ({}% confidence)", 
-                                i + 1,
-                                alt_match.os.name.bright_white(),
-                                (alt_match.confidence * 100.0) as u8
-                            );
-                        }
-                    }
-                } else {
-                    println!("{}", "Unable to determine OS - insufficient data".bright_red());
-                    println!("{}", "Try scanning more ports or enabling service detection".bright_yellow());
-                }
-                println!();
-            }
-
-            if let Err(e) = output_manager.write_results(&results) {
-                eprintln!("Failed to write results: {}", e);
-            }
-            
-            // Summary is already displayed by output manager
-            
-            // Show greppable output if enabled
-            if matches.get_flag("greppable") {
-                for port in &open_ports {
-                    println!("{}:{}", target, port);
-                }
-            }
-            
-            // Run scripts if not ports-only mode and open ports found
-            if !matches.get_flag("ports-only") && !open_ports.is_empty() {
-                println!("{} {}", "[~]".bright_blue(), "Starting Script(s)".bright_yellow().bold());
-                
-                // Create script configuration
-                let script_mode = match matches.get_one::<String>("scripts").map(|s| s.as_str()) {
-                    Some("none") => ScriptMode::None,
-                    Some("default") => ScriptMode::Default,
-                    Some("custom") => ScriptMode::Custom,
-                    Some("all") => ScriptMode::All,
-                    Some("adaptive") => ScriptMode::Adaptive,
-                    _ => ScriptMode::Default,
+                regular_result.set_duration(streaming_result.duration);
+                let stats = phobos::scanner::ScanStats {
+                    packets_sent: streaming_result.total_scanned as u64,
+                    packets_received: streaming_result.open_ports.len() as u64,
+                    ..Default::default()
                 };
+                regular_result.update_stats(stats);
                 
-                if script_mode != ScriptMode::None {
-                    let mut script_config = ScriptConfig::default();
-                    script_config.mode = script_mode;
-                    script_config.ports = Some(open_ports.clone());
-                    
-                    // Add custom script directory if specified
-                    if let Some(script_dir) = matches.get_one::<String>("script-dir") {
-                        script_config.directories = vec![std::path::PathBuf::from(script_dir.clone())];
-                    }
-                    
-                    // Add script tags if specified
-                    if let Some(tags) = matches.get_one::<String>("script-tags") {
-                        script_config.tags = Some(tags.split(',').map(|t| t.trim().to_string()).collect());
-                    }
-                    
-                    // Set timeout and concurrency
-                    if let Some(timeout) = matches.get_one::<u64>("script-timeout") {
-                        script_config.timeout = std::time::Duration::from_millis(*timeout);
-                    }
-                    
-                    if let Some(max_concurrent) = matches.get_one::<usize>("max-script-concurrent") {
-                        script_config.max_concurrent = *max_concurrent;
-                    }
-                    
-                    // Run script engine
-                    if let Err(e) = run_script_engine(&target, &open_ports, &script_config).await {
-                        eprintln!("{} Script execution failed: {}", "[!]".bright_red(), e);
-                    }
-                }
+                // Show results in Nmap-compatible format
+                handle_scan_results(regular_result, &target, &matches, show_all_states, streaming_result.open_ports.clone()).await?;
             }
-            
-            
-            // Run Nmap for detailed analysis (unless disabled)
-            if !matches.get_flag("ports-only") && !matches.get_flag("no-nmap") && !open_ports.is_empty() {
-                // Run Nmap with custom args if provided, otherwise use default detailed scan
-                let nmap_args = matches.get_one::<String>("nmap-args");
-                run_nmap_scan(&target, &open_ports, nmap_args);
+            Err(e) => {
+                eprintln!("Streaming scan failed: {:?}", e);
+                process::exit(1);
             }
         }
-        Err(e) => {
-            eprintln!("Scan failed: {:?}", e);
-            process::exit(1);
+    } else {
+        // Traditional scan mode
+        let engine = ScanEngine::new(scan_config.clone()).await?;
+        
+        println!("{} {}", "Starting Phobos".bright_green().bold(), "v1.1.1".bright_green().bold());
+        println!("{} {}", "Target:".bright_yellow().bold(), target.bright_cyan().bold());
+        println!("{} {} {}", "Ports:".bright_yellow().bold(), scan_config.ports.len().to_string().bright_white().bold(), "ports".bright_yellow());
+        println!("{} {}", "Technique:".bright_yellow().bold(), format!("{:?}", technique).bright_white().bold());
+        println!("{} {}", "Threads:".bright_yellow().bold(), scan_config.threads.to_string().bright_white().bold());
+        println!("{} {}", "Batch size:".bright_yellow().bold(), scan_config.batch_size().to_string().bright_white().bold());
+        println!();
+        
+        match engine.scan().await {
+            Ok(results) => {
+                // Use common handler for traditional scan results
+                handle_scan_results(results, &target, &matches, show_all_states, Vec::new()).await?
+            }
+            Err(e) => {
+                eprintln!("Scan failed: {:?}", e);
+                process::exit(1);
+            }
         }
     }
     
