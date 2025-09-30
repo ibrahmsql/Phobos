@@ -1,10 +1,15 @@
 //! Utility modules for the scanner
 
+pub mod adaptive_performance;
+pub mod address_exclusions;
+pub mod address_parser;
 pub mod config;
-pub mod profiles;
-pub mod timing;
-pub mod target_parser;
 pub mod file_input;
+pub mod port_exclusions;
+pub mod profiles;
+pub mod scan_options;
+pub mod target_parser;
+pub mod timing;
 
 use std::time::{Duration, Instant};
 
