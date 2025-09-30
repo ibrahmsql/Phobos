@@ -2,6 +2,7 @@
 
 pub mod engine;
 pub mod techniques;
+pub mod udp;
 
 use crate::config::ScanConfig;
 use crate::network::{PortResult, PortState};

@@ -6,11 +6,10 @@ use colored::*;
 use phobos::{
     config::ScanConfig,
     network::{ScanTechnique, stealth::StealthOptions, phobos_modes::{PhobosModeManager, FearLevel}},
-    intelligence::os_fingerprinting::OSFingerprinter,
     output::{OutputConfig, OutputFormat, OutputManager, ProgressDisplay},
     scanner::engine::ScanEngine,
     scanner::StreamingScanEngine,
-    scripts::{ScriptEngine, ScriptConfig, ScriptMode},
+    scripts::{ScriptEngine, ScriptConfig},
     utils::config::ConfigValidator,
     utils::profiles::ProfileManager,
     utils::target_parser::{TargetParser, ParsedTarget, TargetType},
@@ -23,7 +22,8 @@ use phobos::{
 use anyhow;
 use chrono;
 
-// Script engine execution function
+// Script engine execution function (currently unused)
+#[allow(dead_code)]
 async fn run_script_engine(
     target: &str,
     open_ports: &[u16],
@@ -134,57 +134,113 @@ async fn handle_scan_results(
     results: phobos::scanner::ScanResult, 
     target: &str,
     matches: &clap::ArgMatches,
-    show_all_states: bool,
+    _show_all_states: bool,
     open_ports: Vec<u16>
 ) -> Result<(), Box<dyn std::error::Error>> {
     use colored::*;
     
-    // Process results for either type
-    let actual_open_ports = if open_ports.is_empty() {
-        // Use from scan results
-        results.port_results.iter()
-            .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
-            .map(|pr| pr.port)
-            .collect()
+    // Process all results - not just open ports
+    let all_port_results = if open_ports.is_empty() {
+        // Use from scan results (traditional scan)
+        results.port_results.clone()
     } else {
-        // Use provided (from streaming scan)
-        open_ports
+        // Use provided (from streaming scan) - create results for all tested ports
+        let mut port_results = Vec::new();
+        for &port in &open_ports {
+            port_results.push(phobos::network::PortResult {
+                port,
+                protocol: phobos::network::Protocol::Tcp,
+                state: phobos::network::PortState::Open,
+                service: None,
+                response_time: std::time::Duration::from_millis(0),
+            });
+        }
+        port_results
     };
     
-    // Show results
-    if !actual_open_ports.is_empty() {
-        println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
-        println!("Host is up.");
-        
-        let total_scanned = if results.port_results.is_empty() {
-            actual_open_ports.len() // Estimate from streaming
-        } else {
-            results.port_results.len() // Actual from traditional scan
-        };
-        
-        let closed_count = total_scanned - actual_open_ports.len();
-        if closed_count > 0 {
-            println!("Not shown: {} closed tcp ports", closed_count.to_string().bright_yellow());
+    // Show results - display ALL port states like Nmap
+    println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
+    println!("Host is up.");
+    
+    // Count port states
+    let mut open_count = 0;
+    let mut closed_count = 0;
+    let mut filtered_count = 0;
+    
+    for result in &all_port_results {
+        match result.state {
+            phobos::network::PortState::Open => open_count += 1,
+            phobos::network::PortState::Closed => closed_count += 1,
+            phobos::network::PortState::Filtered => filtered_count += 1,
+            phobos::network::PortState::OpenFiltered => open_count += 1, // Count as open
+            phobos::network::PortState::ClosedFiltered => closed_count += 1, // Count as closed
+            phobos::network::PortState::Unfiltered => filtered_count += 1, // Count as filtered
         }
-        
+    }
+    
+    // Show summary of closed/filtered ports if any
+    let total_non_open = closed_count + filtered_count;
+    if total_non_open > 0 {
+        println!("Not shown: {} closed tcp ports", total_non_open.to_string().bright_yellow());
+    }
+    
+    // Check if verbose mode is enabled
+    let verbose_mode = matches.get_flag("verbose");
+    
+    // Filter ports to display based on verbose mode
+    let ports_to_display: Vec<_> = if verbose_mode {
+        // Show ALL ports in verbose mode
+        all_port_results.iter().collect()
+    } else {
+        // Show only open ports by default
+        all_port_results.iter()
+            .filter(|result| matches!(result.state, phobos::network::PortState::Open | phobos::network::PortState::OpenFiltered))
+            .collect()
+    };
+    
+    if !ports_to_display.is_empty() {
         println!("{:<8} {:<8} {}", "PORT".bright_white().bold(), "STATE".bright_white().bold(), "SERVICE".bright_white().bold());
         
-        for port in &actual_open_ports {
-            let service = results.port_results.iter()
-                .find(|pr| pr.port == *port)
-                .and_then(|pr| pr.service.as_deref())
-                .unwrap_or("unknown");
+        // Display ports based on mode
+        for result in ports_to_display {
+            let service = result.service.as_deref().unwrap_or("unknown");
+            
+            let (state_str, state_color) = match result.state {
+                phobos::network::PortState::Open => ("open", "bright_green"),
+                phobos::network::PortState::Closed => ("closed", "bright_red"), 
+                phobos::network::PortState::Filtered => ("filtered", "bright_yellow"),
+                phobos::network::PortState::OpenFiltered => ("open|filtered", "bright_cyan"),
+                phobos::network::PortState::ClosedFiltered => ("closed|filtered", "bright_magenta"),
+                phobos::network::PortState::Unfiltered => ("unfiltered", "bright_white"),
+            };
+            
+            let colored_state = match state_color {
+                "bright_green" => state_str.bright_green(),
+                "bright_red" => state_str.bright_red(),
+                "bright_yellow" => state_str.bright_yellow(),
+                "bright_cyan" => state_str.bright_cyan(),
+                "bright_magenta" => state_str.bright_magenta(),
+                "bright_white" => state_str.bright_white(),
+                _ => state_str.white(),
+            };
+            
             println!("{:<8} {:<8} {}", 
-                format!("{}/tcp", port).bright_white(),
-                "open".bright_green(),
+                format!("{}/tcp", result.port).bright_white(),
+                colored_state,
                 service.bright_yellow()
             );
         }
-    } else {
-        println!("\nNmap scan report for {} ({})", target.bright_cyan(), target);
-        println!("Host is up.");
-        println!("All scanned ports on {} are closed", target);
+    } else if verbose_mode {
+        println!("No ports were scanned.");
+    } else if open_count == 0 {
+        println!("No open ports found.");
     }
+    
+    // Extract only open ports for greppable output and nmap integration
+    let actual_open_ports: Vec<u16> = all_port_results.iter()
+        .filter(|pr| matches!(pr.state, phobos::network::PortState::Open))
+        .map(|pr| pr.port)
+        .collect();
     
     // Show greppable output if enabled
     if matches.get_flag("greppable") {
@@ -327,6 +383,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .long("exclude-ports")
                 .help("A list of comma separated ports to be excluded from scanning")
                 .value_name("PORTS")
+                .value_delimiter(','),
+        )
+        .arg(
+            Arg::new("exclude-ips")
+                .long("exclude-ips")
+                .help("Comma separated list of IPs/CIDR ranges to exclude (e.g., 192.168.1.1,10.0.0.0/8,172.16.0.1-172.16.0.10)")
+                .value_name("IPS")
                 .value_delimiter(','),
         )
         .arg(
@@ -529,6 +592,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Maximum number of retries for failed connections")
                 .value_parser(clap::value_parser!(u32))
                 .default_value("3"),
+        )
+        .arg(
+            Arg::new("scan-order")
+                .long("scan-order")
+                .value_name("ORDER")
+                .help("Order to scan ports (serial, random)")
+                .value_parser(["serial", "random"])
+                .default_value("serial"),
+        )
+        .arg(
+            Arg::new("tries")
+                .long("tries")
+                .value_name("COUNT")
+                .help("Number of tries per port")
+                .value_parser(clap::value_parser!(u8))
+                .default_value("1"),
         )
         .arg(
             Arg::new("source-port")
@@ -806,20 +885,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Exclude ports if specified
     if let Some(exclude_list) = exclude_ports {
-        let exclude_ports: Vec<u16> = exclude_list.iter()
-            .filter_map(|s| s.parse().ok())
-            .collect();
+        use phobos::utils::port_exclusions::{PortExclusionManager, presets};
         
-        println!("{} {}", 
-            "[~] Excluding ports:".bright_yellow(),
-            exclude_ports.iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-                .bright_red()
-        );
+        let mut manager = PortExclusionManager::new();
+        let mut preset_used = Vec::new();
         
-        ports.retain(|&port| !exclude_ports.contains(&port));
+        for item in exclude_list.iter() {
+            let item_lower = item.to_lowercase();
+            
+            // Check for presets
+            match item_lower.as_str() {
+                "dangerous" => {
+                    manager = manager.exclude_dangerous_ports();
+                    preset_used.push("dangerous");
+                }
+                "noisy" => {
+                    manager = manager.exclude_noisy_ports();
+                    preset_used.push("noisy");
+                }
+                "windows" => {
+                    manager = presets::windows_ports();
+                    preset_used.push("windows");
+                }
+                "database" => {
+                    manager = presets::database_ports();
+                    preset_used.push("database");
+                }
+                "development" | "dev" => {
+                    manager = presets::development_ports();
+                    preset_used.push("development");
+                }
+                "high" => {
+                    manager = presets::high_ports();
+                    preset_used.push("high");
+                }
+                _ => {
+                    // Try to parse as port or range
+                    if item.contains('-') {
+                        // Range like "1000-2000"
+                        let parts: Vec<&str> = item.split('-').collect();
+                        if parts.len() == 2 {
+                            if let (Ok(start), Ok(end)) = (parts[0].parse::<u16>(), parts[1].parse::<u16>()) {
+                                manager = manager.exclude_port_ranges(vec![start..=end]);
+                            }
+                        }
+                    } else {
+                        // Single port
+                        if let Ok(port) = item.parse::<u16>() {
+                            manager = manager.exclude_ports(vec![port]);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if !preset_used.is_empty() {
+            println!("{} {}", 
+                "[~] Using exclusion presets:".bright_yellow(),
+                preset_used.join(", ").bright_magenta()
+            );
+        }
+        
+        let stats = manager.get_exclusion_stats();
+        if stats.total_excluded_estimate > 0 {
+            println!("{} {} ports ({} individual, {} ranges)", 
+                "[~] Excluding:".bright_yellow(),
+                stats.total_excluded_estimate.to_string().bright_red().bold(),
+                stats.individual_ports,
+                stats.port_ranges
+            );
+        }
+        
+        ports = manager.filter_ports(ports);
     }
     
     // Port diagnostics removed as requested
@@ -878,6 +1015,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threads = *matches.get_one::<usize>("threads").unwrap();
     let timeout = *matches.get_one::<u64>("timeout").unwrap();
     let rate_limit = *matches.get_one::<u64>("rate-limit").unwrap();
+    
+    // Parse new scan options
+    let scan_order_str = matches.get_one::<String>("scan-order").map(|s| s.as_str()).unwrap_or("serial");
+    let tries = *matches.get_one::<u8>("tries").unwrap_or(&1);
+    
+    // Apply scan order to ports
+    if scan_order_str == "random" {
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        ports.shuffle(&mut rng);
+        println!("{} {}", 
+            "[~] Scan order:".bright_blue(),
+            "random (evasion mode)".bright_magenta().bold()
+        );
+    } else {
+        println!("{} {}", 
+            "[~] Scan order:".bright_blue(),
+            "serial (sequential)".bright_cyan()
+        );
+    }
+    
+    if tries > 1 {
+        println!("{} {} tries per port", 
+            "[~] Retry mechanism:".bright_blue(),
+            tries.to_string().bright_green().bold()
+        );
+    }
 
     // Parse scan technique
     let mut technique = match technique_str.as_str() {
@@ -1025,10 +1189,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Create output manager
-    let output_manager = OutputManager::new(output_config.clone());
+    let _output_manager = OutputManager::new(output_config.clone());
     
     // Create progress display
-    let progress = ProgressDisplay::new(scan_config.ports.len());
+    let _progress = ProgressDisplay::new(scan_config.ports.len());
     
     // Handle profile saving
     if let Some(profile_name) = matches.get_one::<String>("save-profile") {

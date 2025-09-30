@@ -234,8 +234,9 @@ impl ScanEngine {
         // Create ultra-fast batches
         let batches = create_batches(ports.clone(), target_ip, current_batch_size);
         
-        // Process batches with limited concurrency for accuracy
-        let semaphore = Arc::new(Semaphore::new(std::cmp::min(batches.len(), 25)));
+        // Process batches with optimized concurrency for speed and accuracy balance
+        let max_concurrent = std::cmp::min(batches.len(), 50); // Balanced for speed + accuracy
+        let semaphore = Arc::new(Semaphore::new(max_concurrent));
         let mut futures = FuturesUnordered::new();
         
         for batch in batches {
@@ -329,21 +330,40 @@ impl ScanEngine {
         })
     }
     
-    /// Ultra-fast TCP scanning with reliable detection
+    /// High-speed TCP scanning with optimized timeout for accuracy
     async fn scan_tcp_high_performance(&self, _tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
         let socket_addr = SocketAddr::new(IpAddr::V4(target), port);
         
-        // Use configured timeout for reliable detection
-        let timeout_duration = self.config.timeout_duration();
+        // Use optimized timeout - not too long, not too short
+        let base_timeout = self.config.timeout_duration();
+        let optimized_timeout = std::cmp::max(base_timeout, Duration::from_millis(2000)); // 2s minimum
         
-        // Direct TCP connection without pooling to avoid detection issues
-        match timeout(timeout_duration, tokio::net::TcpStream::connect(socket_addr)).await {
+        // Single attempt with optimized timeout for speed
+        match timeout(optimized_timeout, tokio::net::TcpStream::connect(socket_addr)).await {
             Ok(Ok(stream)) => {
-                // Properly close the connection
+                // Quick verification that connection is real
+                let is_connected = stream.peer_addr().is_ok();
                 drop(stream);
-                Ok(PortState::Open)
+                
+                if is_connected {
+                    Ok(PortState::Open)
+                } else {
+                    Ok(PortState::Closed)
+                }
             }
-            Ok(Err(_)) | Err(_) => Ok(PortState::Closed),
+            Ok(Err(e)) => {
+                // Check specific error types for more accurate classification
+                use std::io::ErrorKind;
+                match e.kind() {
+                    ErrorKind::ConnectionRefused => Ok(PortState::Closed),
+                    ErrorKind::TimedOut => Ok(PortState::Filtered), // Might be open but slow
+                    _ => Ok(PortState::Closed),
+                }
+            }
+            Err(_) => {
+                // Our timeout - could be filtered or just slow
+                Ok(PortState::Filtered)
+            }
         }
     }
     
