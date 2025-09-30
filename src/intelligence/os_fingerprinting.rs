@@ -1,7 +1,7 @@
 //! Advanced OS fingerprinting system for Phobos
 //! Uses multiple techniques to identify target operating systems
 
-use crate::network::{PortResult, PortState, Protocol};
+use crate::network::{PortResult, PortState};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
