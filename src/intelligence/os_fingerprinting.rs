@@ -443,6 +443,7 @@ impl Default for OSFingerprinter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::Protocol;
     use std::time::Duration;
     
     #[test]
