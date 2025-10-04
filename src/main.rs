@@ -101,14 +101,14 @@ fn adjust_ulimit_size(ulimit: Option<u64>) -> u64 {
         Ok((soft, _)) => soft,
         Err(_) => {
             eprintln!("{}", "[!] WARNING: Could not get file descriptor limit".bright_yellow());
-            8000 // Safe default
+            65535 // Safe default for modern systems
         }
     }
 }
 
 #[cfg(not(unix))]
 fn adjust_ulimit_size(_ulimit: Option<u64>) -> u64 {
-    8000 // Default for non-Unix systems
+    65535 // Default for non-Unix systems
 }
 
 fn print_banner() {
@@ -246,6 +246,26 @@ async fn handle_scan_results(
     if matches.get_flag("greppable") {
         for port in &actual_open_ports {
             println!("{}:{}", target, port);
+        }
+    }
+    
+    // Save to history unless disabled
+    if !matches.get_flag("no-history") {
+        if let Ok(history_manager) = phobos::HistoryManager::new() {
+            match history_manager.save(&results) {
+                Ok(id) => {
+                    println!("\n{} {}", 
+                        "💾 Scan saved to history:".bright_blue(),
+                        id.bright_yellow()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("{} {}", 
+                        "⚠️  Failed to save scan history:".bright_yellow(),
+                        e
+                    );
+                }
+            }
         }
     }
     
@@ -472,7 +492,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("PPS")
                 .help("Rate limit in packets per second")
                 .value_parser(clap::value_parser!(u64))
-                .default_value("10000000"), // 10M PPS - Ultra-fast scanning rate
+                .default_value("100000"), // 100K PPS - Realistic scanning rate
         )
         .arg(
             Arg::new("batch-size")
@@ -685,7 +705,94 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .help("Update Phobos to the latest version from GitHub")
                 .action(ArgAction::SetTrue),
         )
-
+        
+        // History management arguments
+        .arg(
+            Arg::new("history")
+                .long("history")
+                .value_name("COMMAND")
+                .help("History command: list, show, diff")
+                .value_parser(["list", "show", "diff"]),
+        )
+        .arg(
+            Arg::new("history-id")
+                .long("history-id")
+                .value_name("ID")
+                .help("Scan history ID for show/diff commands"),
+        )
+        .arg(
+            Arg::new("compare-with")
+                .long("compare-with")
+                .value_name("ID")
+                .help("Compare current scan with this history ID"),
+        )
+        .arg(
+            Arg::new("save-history")
+                .long("save-history")
+                .help("Save scan results to history (enabled by default)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-history")
+                .long("no-history")
+                .help("Don't save scan results to history")
+                .action(ArgAction::SetTrue),
+        )
+        
+        // Distributed scanning arguments
+        .arg(
+            Arg::new("distributed")
+                .long("distributed")
+                .help("Enable distributed scanning mode")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("mode")
+                .long("mode")
+                .value_name("MODE")
+                .help("Distributed mode: master, worker, or standalone")
+                .value_parser(["master", "worker", "standalone"])
+                .requires("distributed"),
+        )
+        .arg(
+            Arg::new("master-address")
+                .long("master-address")
+                .value_name("ADDRESS")
+                .help("Master node address (IP:PORT) for worker mode")
+                .requires("distributed"),
+        )
+        .arg(
+            Arg::new("workers")
+                .long("workers")
+                .value_name("ADDRESSES")
+                .help("Comma-separated list of worker addresses for master mode")
+                .value_delimiter(',')
+                .requires("distributed"),
+        )
+        .arg(
+            Arg::new("coordination-port")
+                .long("coordination-port")
+                .value_name("PORT")
+                .help("Port for master-worker coordination")
+                .value_parser(clap::value_parser!(u16))
+                .default_value("9000"),
+        )
+        .arg(
+            Arg::new("load-balancing")
+                .long("load-balancing")
+                .value_name("STRATEGY")
+                .help("Load balancing strategy: round-robin, least-loaded, random, weighted")
+                .value_parser(["round-robin", "least-loaded", "random", "weighted"])
+                .default_value("least-loaded"),
+        )
+        .arg(
+            Arg::new("max-workers")
+                .long("max-workers")
+                .value_name("COUNT")
+                .help("Maximum number of workers to use")
+                .value_parser(clap::value_parser!(usize))
+                .default_value("10"),
+        )
 
         .get_matches();
     
@@ -734,6 +841,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Handle history commands
+    if let Some(history_cmd) = matches.get_one::<String>("history") {
+        let history_manager = phobos::HistoryManager::new()?;
+        
+        match history_cmd.as_str() {
+            "list" => {
+                history_manager.print_list()?;
+                return Ok(());
+            }
+            "show" => {
+                if let Some(id) = matches.get_one::<String>("history-id") {
+                    history_manager.print_scan(id)?;
+                } else {
+                    eprintln!("{}", "Error: --history-id required for 'show' command".bright_red());
+                    process::exit(1);
+                }
+                return Ok(());
+            }
+            "diff" => {
+                if let Some(id1) = matches.get_one::<String>("history-id") {
+                    if let Some(id2) = matches.get_one::<String>("compare-with") {
+                        history_manager.print_diff(id1, id2)?;
+                    } else {
+                        eprintln!("{}", "Error: --compare-with required for 'diff' command".bright_red());
+                        process::exit(1);
+                    }
+                } else {
+                    eprintln!("{}", "Error: --history-id and --compare-with required for 'diff' command".bright_red());
+                    process::exit(1);
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
+    // Handle distributed mode
+    if matches.get_flag("distributed") {
+        return handle_distributed_mode(&matches).await;
+    }
+    
     // Handle system check
     if matches.get_flag("system-check") {
         println!("{}", "System Check Results:".bright_yellow().bold());
@@ -1611,4 +1759,106 @@ fn _display_summary(results: &[phobos::scanner::ScanResult], target: &str) {
     }
     
     println!();
+}
+
+/// Handle distributed scanning mode
+async fn handle_distributed_mode(matches: &clap::ArgMatches) -> Result<(), Box<dyn std::error::Error>> {
+    use phobos::distributed::{master::MasterNode, worker::WorkerNode};
+    use phobos::config::{DistributedMode, LoadBalancingStrategy};
+    
+    let mode_str = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("standalone");
+    let coordination_port = *matches.get_one::<u16>("coordination-port").unwrap_or(&9000);
+    
+    match mode_str {
+        "master" => {
+            println!("{}", "🎯 Starting in MASTER mode".bright_cyan().bold());
+            println!();
+            
+            // Parse load balancing strategy
+            let lb_strategy = match matches.get_one::<String>("load-balancing").map(|s| s.as_str()) {
+                Some("round-robin") => LoadBalancingStrategy::RoundRobin,
+                Some("least-loaded") => LoadBalancingStrategy::LeastLoaded,
+                Some("random") => LoadBalancingStrategy::Random,
+                Some("weighted") => LoadBalancingStrategy::Weighted,
+                _ => LoadBalancingStrategy::LeastLoaded,
+            };
+            
+            let bind_address = format!("0.0.0.0:{}", coordination_port);
+            let master = MasterNode::new(bind_address.clone(), lb_strategy);
+            
+            println!("{} {}", "[~] Bind address:".bright_blue(), bind_address.bright_white().bold());
+            println!("{} {:?}", "[~] Load balancing:".bright_blue(), lb_strategy);
+            println!();
+            
+            // Get target and ports if provided
+            if let Some(target_str) = matches.get_one::<String>("target") {
+                let target: std::net::IpAddr = target_str.parse()
+                    .map_err(|_| anyhow::anyhow!("Invalid target IP address"))?;
+                
+                // Parse ports
+                let port_spec = matches.get_one::<String>("ports").unwrap();
+                let ports = parse_ports(port_spec)?;
+                
+                println!("{} {}", "[~] Target:".bright_blue(), target.to_string().bright_cyan().bold());
+                println!("{} {}", "[~] Ports:".bright_blue(), ports.len().to_string().bright_white().bold());
+                println!();
+                
+                // Create tasks
+                let max_workers = *matches.get_one::<usize>("max-workers").unwrap_or(&10);
+                let chunk_size = phobos::distributed::load_balancer::LoadBalancer::calculate_chunk_size(
+                    ports.len(),
+                    max_workers
+                );
+                
+                let tasks = master.create_tasks(
+                    target,
+                    ports,
+                    "connect".to_string(),
+                    chunk_size,
+                ).await;
+                
+                println!("{} {} tasks created (chunk size: {})", 
+                    "[✓]".bright_green(),
+                    tasks.len().to_string().bright_white().bold(),
+                    chunk_size.to_string().bright_cyan()
+                );
+                
+                master.add_tasks(tasks).await;
+            }
+            
+            println!("{}", "🚀 Master node starting...".bright_green().bold());
+            println!("{}", "Waiting for workers to connect...".bright_yellow());
+            println!();
+            
+            // Start master (this blocks)
+            master.start().await?;
+        }
+        
+        "worker" => {
+            println!("{}", "⚙️  Starting in WORKER mode".bright_cyan().bold());
+            println!();
+            
+            let master_address = matches.get_one::<String>("master-address")
+                .ok_or_else(|| anyhow::anyhow!("--master-address required for worker mode"))?;
+            
+            println!("{} {}", "[~] Master address:".bright_blue(), master_address.bright_white().bold());
+            println!();
+            
+            let worker = WorkerNode::new(master_address.clone());
+            
+            println!("{}", "🚀 Worker node starting...".bright_green().bold());
+            println!("{}", "Connecting to master...".bright_yellow());
+            println!();
+            
+            // Start worker (this blocks)
+            worker.start().await?;
+        }
+        
+        _ => {
+            eprintln!("{}", "❌ Invalid mode. Use: master, worker, or standalone".bright_red().bold());
+            std::process::exit(1);
+        }
+    }
+    
+    Ok(())
 }

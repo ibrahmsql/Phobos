@@ -5,7 +5,9 @@
 pub mod adaptive;
 pub mod benchmark;
 pub mod config;
+pub mod distributed;
 pub mod error;
+pub mod history;
 pub mod intelligence;
 pub mod network;
 pub mod output;
@@ -19,6 +21,7 @@ pub use adaptive::{AdaptiveConfig, AdaptiveResult, LearningInsights, ScanStats, 
 pub use benchmark::{Benchmark, NamedTimer};
 pub use error::{ScanError, ScanResult};
 pub use config::ScanConfig;
+pub use history::{HistoryManager, ScanHistoryEntry, ScanDiff};
 pub use intelligence::{IntelligenceEngine, IntelligenceConfig, IntelligenceResults};
 pub use network::ScanTechnique;
 pub use scanner::engine::ScanEngine;

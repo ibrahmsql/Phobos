@@ -69,6 +69,12 @@ Phobos is a **lightning-fast**, **modern port scanner** built in Rust that **out
 - **Service detection** with version fingerprinting
 - **Integration with Nmap** for detailed analysis
 
+### 📜 **Scan History & Tracking**
+- **Automatic scan history** - All scans saved by default
+- **Scan comparison** - Detect changes between scans
+- **Timeline tracking** - Monitor port changes over time
+- **Change detection** - Identify new/closed ports and service changes
+
 ---
 
 ## 🔧 Installation
@@ -199,6 +205,50 @@ phobos target.com -s syn --stealth -f -D 192.168.1.1,192.168.1.2,ME
 # Comprehensive security scan with Nmap integration
 phobos target.com -p 1-65535 --nmap-args "-sV -sC -O --script vuln"
 ```
+
+### 🌐 Distributed Scanning (NEW!)
+
+```bash
+# Start master node
+phobos --distributed --mode master --coordination-port 9000 \
+  --workers worker1.local:9000,worker2.local:9000,worker3.local:9000
+
+# Start worker nodes (on each worker machine)
+phobos --distributed --mode worker --master-address master.local:9000
+
+# Run distributed scan from master
+phobos 10.0.0.0/16 -p 1-65535 --distributed --mode master \
+  --workers worker1:9000,worker2:9000,worker3:9000 \
+  --load-balancing least-loaded
+```
+
+### 📜 Scan History & Comparison (NEW!)
+
+```bash
+# Scan results are automatically saved to history
+phobos production.com -p 1-1000
+
+# List all scan history
+phobos --history list
+
+# View specific scan details
+phobos --history show --history-id production_com_1234567890
+
+# Compare two scans to see what changed
+phobos --history diff --history-id scan1_id --compare-with scan2_id
+
+# Scan and compare with previous scan
+phobos production.com -p 1-1000 --compare-with previous_scan_id
+
+# Disable automatic history saving
+phobos target.com -p 80,443 --no-history
+```
+
+**Use Cases:**
+- Track port changes over time
+- Detect unauthorized services
+- Monitor security posture
+- Compliance auditing
 
 ---
 
