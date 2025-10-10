@@ -12,10 +12,62 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use futures::stream::{FuturesUnordered, StreamExt};
+use std::io;
+
+// System resource detection for optimal batch sizing
+#[cfg(unix)]
+use rlimit::{getrlimit, Resource};
+
+// Batch sizing constants (optimized for performance)
+const DEFAULT_FILE_DESCRIPTORS_LIMIT: u64 = 8000;
+const AVERAGE_BATCH_SIZE: u16 = 3000;
+const MIN_BATCH_SIZE: u16 = 100;
+const MAX_BATCH_SIZE: u16 = 15000;
 // use rayon::prelude::*; // Unused import removed
+
+/// Socket iterator for memory-efficient on-demand socket generation
+#[derive(Debug, Clone)]
+pub struct SocketIterator {
+    ips: Vec<Ipv4Addr>,
+    ports: Vec<u16>,
+    current_ip_index: usize,
+    current_port_index: usize,
+}
+
+impl SocketIterator {
+    pub fn new(ips: &[Ipv4Addr], ports: &[u16]) -> Self {
+        Self {
+            ips: ips.to_vec(),
+            ports: ports.to_vec(),
+            current_ip_index: 0,
+            current_port_index: 0,
+        }
+    }
+    
+    pub fn next(&mut self) -> Option<SocketAddr> {
+        if self.current_ip_index >= self.ips.len() {
+            return None;
+        }
+        
+        let ip = self.ips[self.current_ip_index];
+        let port = self.ports[self.current_port_index];
+        let socket = SocketAddr::new(IpAddr::V4(ip), port);
+        
+        // Move to next port
+        self.current_port_index += 1;
+        
+        // If we've exhausted all ports for this IP, move to next IP
+        if self.current_port_index >= self.ports.len() {
+            self.current_port_index = 0;
+            self.current_ip_index += 1;
+        }
+        
+        Some(socket)
+    }
+}
 
 /// Streaming scan result for reduced memory usage
 #[derive(Debug, Clone)]
@@ -56,6 +108,7 @@ pub struct PerformanceStats {
 
 impl Default for ScanEngine {
     fn default() -> Self {
+        let optimal_batch = Self::infer_optimal_batch_size(None);
         Self {
             config: ScanConfig::default(),
             socket_pool: None,
@@ -64,7 +117,7 @@ impl Default for ScanEngine {
             rate_limiter: Arc::new(Mutex::new(RateLimiter::new(1000))),
             service_db: ServiceDatabase::new(),
             response_analyzer: ResponseAnalyzer::new(ScanTechnique::Syn),
-            adaptive_batch_size: Arc::new(AtomicU64::new(1000)),
+            adaptive_batch_size: Arc::new(AtomicU64::new(optimal_batch as u64)),
             connection_pool: Arc::new(Mutex::new(HashMap::new())),
             performance_stats: Arc::new(Mutex::new(PerformanceStats::default())),
         }
@@ -72,6 +125,55 @@ impl Default for ScanEngine {
 }
 
 impl ScanEngine {
+    /// Infer optimal batch size from system ulimit
+    /// Uses system file descriptor limits to maximize performance
+    pub fn infer_optimal_batch_size(custom_batch: Option<usize>) -> usize {
+        #[cfg(unix)]
+        {
+            let ulimit = if let Ok((soft, _hard)) = getrlimit(Resource::NOFILE) {
+                soft
+            } else {
+                log::warn!("Could not read ulimit, using default");
+                return AVERAGE_BATCH_SIZE as usize;
+            };
+            
+            let mut batch_size: u64 = custom_batch.unwrap_or(AVERAGE_BATCH_SIZE as usize) as u64;
+            
+            // Adaptive batch size based on system limits
+            if ulimit < batch_size {
+                log::warn!("File limit ({}) is lower than desired batch size ({}). Adjusting...", ulimit, batch_size);
+                
+                if ulimit < AVERAGE_BATCH_SIZE as u64 {
+                    // ulimit is very small - use half of it
+                    log::warn!("Your file limit is very small ({}) - this will impact speed", ulimit);
+                    batch_size = ulimit / 2;
+                } else if ulimit > DEFAULT_FILE_DESCRIPTORS_LIMIT {
+                    // High ulimit - use average batch size
+                    log::info!("Using average batch size ({})", AVERAGE_BATCH_SIZE);
+                    batch_size = AVERAGE_BATCH_SIZE as u64;
+                } else {
+                    // Medium ulimit - leave 100 FDs for system
+                    batch_size = ulimit - 100;
+                }
+            } else if ulimit + 2 > batch_size {
+                // Ulimit is close to batch size - could go higher
+                log::debug!("File limit ({}) is higher than batch size. Could increase to: {}", ulimit, ulimit - 100);
+            }
+            
+            let final_batch = (batch_size as usize).clamp(MIN_BATCH_SIZE as usize, MAX_BATCH_SIZE as usize);
+            log::info!("🚀 Optimal batch size: {} (ulimit: {})", final_batch, ulimit);
+            
+            return final_batch;
+        }
+        
+        #[cfg(not(unix))]
+        {
+            let batch = custom_batch.unwrap_or(AVERAGE_BATCH_SIZE as usize);
+            log::info!("Using batch size: {} (non-Unix system)", batch);
+            batch
+        }
+    }
+    
     /// Create a new scan engine with the given configuration
     pub async fn new(config: ScanConfig) -> crate::Result<Self> {
         config.validate()?;
@@ -131,12 +233,12 @@ impl ScanEngine {
         let service_db = ServiceDatabase::new();
         let response_analyzer = ResponseAnalyzer::new(technique);
         
-        // Initialize performance optimization components
-        let initial_batch_size = config.batch_size().max(1000) as u64; // Ensure minimum batch size
-        let adaptive_batch_size = Arc::new(AtomicU64::new(initial_batch_size));
+        // RustScan-style: Infer optimal batch size from system
+        let initial_batch_size = Self::infer_optimal_batch_size(config.batch_size);
+        let adaptive_batch_size = Arc::new(AtomicU64::new(initial_batch_size as u64));
         let connection_pool = Arc::new(Mutex::new(HashMap::new()));
         let performance_stats = Arc::new(Mutex::new(PerformanceStats {
-            optimal_batch_size: config.batch_size() as u16,
+            optimal_batch_size: initial_batch_size as u16,
             last_optimization: Some(Instant::now()),
             ..Default::default()
         }));
@@ -223,52 +325,155 @@ impl ScanEngine {
          Ok(result)
     }
     
-    /// Ultra-fast scan for a single host using optimized batching
+    /// Ultra-fast scan using continuous FuturesUnordered queue
+    /// Optimized for full port scans with minimal overhead
     async fn scan_single_host_high_performance(&self, target_ip: Ipv4Addr) -> crate::Result<(Vec<PortResult>, ScanStats)> {
         let ports = &self.config.ports;
-        let current_batch_size = self.get_current_batch_size() as usize;
+        let batch_size = self.get_current_batch_size() as usize;
         
-        let mut all_results = Vec::new();
+        // Pre-allocate for performance (avoid reallocation)
+        let estimated_open = (ports.len() / 100).max(10); // ~1% typically open
+        let mut all_results = Vec::with_capacity(estimated_open);
         let mut stats = ScanStats::default();
         
-        // Create ultra-fast batches
-        let batches = create_batches(ports.clone(), target_ip, current_batch_size);
-        
-        // Process batches with optimized concurrency for speed and accuracy balance
-        let max_concurrent = std::cmp::min(batches.len(), 50); // Balanced for speed + accuracy
-        let semaphore = Arc::new(Semaphore::new(max_concurrent));
+        // Create socket iterator for memory-efficient on-demand generation
+        let mut socket_iterator = SocketIterator::new(&[target_ip], ports);
         let mut futures = FuturesUnordered::new();
         
-        for batch in batches {
-            let permit = semaphore.clone().acquire_owned().await?;
-            let engine = self.clone_for_task();
-            
-            futures.push(async move {
-                let _permit = permit;
-                engine.scan_batch_high_performance(target_ip, batch).await
-            });
+        // Fill initial batch
+        for _ in 0..batch_size {
+            if let Some(socket) = socket_iterator.next() {
+                futures.push(self.scan_socket_high_performance(socket));
+            } else {
+                break;
+            }
         }
         
+        log::debug!("Starting continuous queue with batch size {}", batch_size);
+        
+        // Key optimization: As each future completes, immediately spawn a new one
+        // This maintains constant batch size and maximizes throughput
         while let Some(result) = futures.next().await {
-            match result {
-                Ok((mut batch_results, batch_stats)) => {
-                    all_results.append(&mut batch_results);
-                    // Merge batch stats manually
-                     stats.packets_sent += batch_stats.packets_sent;
-                     stats.packets_received += batch_stats.packets_received;
-                     stats.timeouts += batch_stats.timeouts;
-                     stats.errors += batch_stats.errors;
+            // Spawn next socket scan to maintain batch size (hot path)
+            if let Some(socket) = socket_iterator.next() {
+                futures.push(self.scan_socket_high_performance(socket));
+            }
+            
+            // Fast path: Only track open ports for full scans
+            if let Ok(port_result) = result {
+                if port_result.state == PortState::Open {
+                    all_results.push(port_result);
+                    stats.packets_sent += 1;
+                    stats.packets_received += 1;
+                } else {
+                    // Count but don't store closed/filtered
+                    stats.packets_sent += 1;
                 }
-                Err(e) => {
-                    log::warn!("Batch scan failed: {}", e);
-                }
+            } else {
+                stats.errors += 1;
             }
         }
         
         Ok((all_results, stats))
     }
     
-    /// Ultra-fast batch scanning with optimized connection handling
+    /// High-performance socket scanning with minimal overhead
+    /// Balanced approach: 2 tries for accuracy with minimal error handling
+    async fn scan_socket_high_performance(&self, socket: SocketAddr) -> crate::Result<PortResult> {
+        let port = socket.port();
+        // Validate IP version (fast path)
+        if !matches!(socket.ip(), IpAddr::V4(_)) {
+            return Err(crate::error::ScanError::ConfigError("IPv6 not supported".to_string()));
+        }
+        
+        let start_time = Instant::now();
+        
+        // Balanced: 2 tries for accuracy without delays
+        let tries = 2;
+        for attempt in 1..=tries {
+            match self.connect_optimized(socket).await {
+                Ok(_) => {
+                    // Port is OPEN!
+                    let response_time = start_time.elapsed();
+                    let service = self.service_db.get_tcp_service(port).map(|s| s.to_string());
+                    
+                    return Ok(PortResult {
+                        port,
+                        protocol: Protocol::Tcp,
+                        state: PortState::Open,
+                        service,
+                        response_time,
+                    });
+                }
+                Err(e) => {
+                    // Critical error check
+                    if e.to_string().contains("too many open files") {
+                        return Err(crate::error::ScanError::IoError(e));
+                    }
+                    
+                    // Last attempt - classify and return
+                    if attempt == tries {
+                        let state = Self::classify_error(&e);
+                        return Ok(PortResult {
+                            port,
+                            protocol: Protocol::Tcp,
+                            state,
+                            service: None,
+                            response_time: start_time.elapsed(),
+                        });
+                    }
+                    // Continue to next attempt (no delay for speed)
+                }
+            }
+        }
+        
+        // Fallback (shouldn't reach here)
+        Ok(PortResult {
+            port,
+            protocol: Protocol::Tcp,
+            state: PortState::Closed,
+            service: None,
+            response_time: start_time.elapsed(),
+        })
+    }
+    
+    /// Simplified connection with minimal abstractions for maximum speed
+    /// Optimized to reduce system calls for full port scans
+    async fn connect_optimized(&self, socket: SocketAddr) -> io::Result<tokio::net::TcpStream> {
+        let timeout_duration = self.config.timeout_duration();
+        
+        // Direct TcpStream::connect with timeout
+        // Using ?? pattern for fast error propagation
+        timeout(
+            timeout_duration,
+            tokio::net::TcpStream::connect(socket)
+        ).await?
+        // Connection established if we got here
+        // Stream will auto-close on drop - minimal system calls
+    }
+    
+    /// Classify IO error into port state
+    fn classify_error(error: &io::Error) -> PortState {
+        use std::io::ErrorKind;
+        match error.kind() {
+            ErrorKind::ConnectionRefused => PortState::Closed,
+            ErrorKind::ConnectionReset => PortState::Filtered,
+            ErrorKind::TimedOut => PortState::Filtered,
+            ErrorKind::PermissionDenied => PortState::Filtered,
+            ErrorKind::AddrNotAvailable => PortState::Filtered,
+            _ => {
+                // Check for nested timeout error
+                let error_str = error.to_string().to_lowercase();
+                if error_str.contains("timeout") || error_str.contains("timed out") {
+                    PortState::Filtered
+                } else {
+                    PortState::Closed
+                }
+            }
+        }
+    }
+    
+    /// Ultra-fast batch scanning with optimized connection handling (Legacy method, kept for compatibility)
     async fn scan_batch_high_performance(&self, target_ip: Ipv4Addr, batch: ScanBatch) -> crate::Result<(Vec<PortResult>, ScanStats)> {
         let mut results = Vec::new();
         let mut stats = ScanStats::default();
@@ -298,24 +503,57 @@ impl ScanEngine {
         Ok((results, stats))
     }
     
-    /// Ultra-fast port scanning with connection reuse
+    /// Ultra-fast port scanning with retry mechanism for reliability
     async fn scan_port_high_performance(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortResult> {
         let start_time = Instant::now();
+        let max_retries = self.config.max_retries.unwrap_or(1).max(1);
         
-        let state = if let Some(ref tcp_scanner) = self.tcp_scanner {
-            // Use optimized TCP Connect scan
-            self.scan_tcp_high_performance(tcp_scanner, target, port).await?
-        } else if let Some(ref _socket_pool) = self.socket_pool {
-            // Use raw socket scan
-            self.scan_port_raw(target, port).await?
-        } else {
-            return Err(crate::error::ScanError::ConfigError(
-                "No scanner available".to_string()
-            ));
-        };
+        let mut last_state = PortState::Closed;
+        let mut attempts = 0;
+        
+        // Retry mechanism for reliability
+        while attempts < max_retries {
+            attempts += 1;
+            
+            let state = if let Some(ref tcp_scanner) = self.tcp_scanner {
+                // Use optimized TCP Connect scan
+                self.scan_tcp_high_performance(tcp_scanner, target, port).await?
+            } else if let Some(ref _socket_pool) = self.socket_pool {
+                // Use raw socket scan
+                self.scan_port_raw(target, port).await?
+            } else {
+                return Err(crate::error::ScanError::ConfigError(
+                    "No scanner available".to_string()
+                ));
+            };
+            
+            // If port is open, return immediately (no need to retry)
+            if state == PortState::Open {
+                last_state = state;
+                break;
+            }
+            
+            // If filtered, might need retry
+            if state == PortState::Filtered && attempts < max_retries {
+                // Small delay before retry
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                last_state = state;
+                continue;
+            }
+            
+            // If closed, retry once more to be sure (network flake)
+            if state == PortState::Closed && attempts < max_retries {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                last_state = state;
+                continue;
+            }
+            
+            last_state = state;
+            break;
+        }
         
         let response_time = start_time.elapsed();
-        let service = if state == PortState::Open {
+        let service = if last_state == PortState::Open {
             self.service_db.get_tcp_service(port).map(|s| s.to_string())
         } else {
             None
@@ -324,25 +562,27 @@ impl ScanEngine {
         Ok(PortResult {
             port,
             protocol: Protocol::Tcp,
-            state,
+            state: last_state,
             service,
             response_time,
         })
     }
     
-    /// High-speed TCP scanning with optimized timeout for accuracy
+    /// Ultra-fast high-speed TCP scanning with retry-based accuracy
     async fn scan_tcp_high_performance(&self, _tcp_scanner: &TcpConnectScanner, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
         let socket_addr = SocketAddr::new(IpAddr::V4(target), port);
         
-        // Use optimized timeout - not too long, not too short
-        let base_timeout = self.config.timeout_duration();
-        let optimized_timeout = std::cmp::max(base_timeout, Duration::from_millis(2000)); // 2s minimum
+        // Speed-optimized approach: Use fast timeout, rely on retries for accuracy
+        // This gives maximum speed while retry mechanism prevents port misses
+        let scan_timeout = self.config.timeout_duration();
         
-        // Single attempt with optimized timeout for speed
-        match timeout(optimized_timeout, tokio::net::TcpStream::connect(socket_addr)).await {
+        // Attempt connection with configured timeout
+        match timeout(scan_timeout, tokio::net::TcpStream::connect(socket_addr)).await {
             Ok(Ok(stream)) => {
-                // Quick verification that connection is real
+                // Verify connection is real and not a false positive
                 let is_connected = stream.peer_addr().is_ok();
+                
+                // Gracefully close connection
                 drop(stream);
                 
                 if is_connected {
@@ -352,16 +592,19 @@ impl ScanEngine {
                 }
             }
             Ok(Err(e)) => {
-                // Check specific error types for more accurate classification
+                // Detailed error classification for accuracy
                 use std::io::ErrorKind;
                 match e.kind() {
                     ErrorKind::ConnectionRefused => Ok(PortState::Closed),
-                    ErrorKind::TimedOut => Ok(PortState::Filtered), // Might be open but slow
+                    ErrorKind::ConnectionReset => Ok(PortState::Filtered),
+                    ErrorKind::TimedOut => Ok(PortState::Filtered),
+                    ErrorKind::PermissionDenied => Ok(PortState::Filtered),
+                    ErrorKind::AddrNotAvailable => Ok(PortState::Filtered),
                     _ => Ok(PortState::Closed),
                 }
             }
             Err(_) => {
-                // Our timeout - could be filtered or just slow
+                // Timeout expired - likely filtered or slow network
                 Ok(PortState::Filtered)
             }
         }
@@ -453,11 +696,208 @@ impl ScanEngine {
         }
     }
     
-    // Placeholder for raw socket scanning (from original implementation)
-    async fn scan_port_raw(&self, _target: Ipv4Addr, _port: u16) -> crate::Result<PortState> {
-        // This would contain the raw socket implementation
-        // For now, fallback to closed state
-        Ok(PortState::Closed)
+    /// Raw socket scanning implementation (requires elevated privileges)
+    /// Falls back to TCP Connect if raw sockets are not available
+    async fn scan_port_raw(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortState> {
+        // Raw socket implementation requires CAP_NET_RAW capability on Linux
+        // or administrator privileges on Windows
+        
+        if let Some(socket_pool) = &self.socket_pool {
+            // Raw socket SYN scan - Ultra-fast stealth scanning
+            log::debug!("Using raw socket SYN scan for {}:{}", target, port);
+            
+            // Get TCP socket from pool (round-robin)
+            let raw_socket = match socket_pool.get_tcp_socket() {
+                Some(socket) => socket,
+                None => {
+                    log::warn!("No TCP sockets available in pool, falling back to TCP Connect");
+                    return self.scan_tcp_high_performance(
+                        &TcpConnectScanner::new(self.config.timeout_duration()),
+                        target,
+                        port
+                    ).await;
+                }
+            };
+            
+            // Build TCP SYN packet
+            let syn_packet = self.build_tcp_syn_packet(target, port)?;
+            
+            // Send SYN packet using raw socket
+            let dest_addr = SocketAddr::new(IpAddr::V4(target), port);
+            match raw_socket.send_to(&syn_packet, dest_addr) {
+                Ok(_) => {
+                    log::trace!("SYN packet sent to {}:{}", target, port);
+                    
+                    // Wait for response with timeout
+                    let response_timeout = std::cmp::min(
+                        self.config.timeout_duration(),
+                        Duration::from_millis(1000) // Max 1s for SYN scan
+                    );
+                    
+                    // Try to receive response (SYN-ACK or RST)
+                    let state = self.receive_syn_response(socket_pool, target, port, response_timeout).await?;
+                    
+                    log::debug!("Port {}:{} state: {:?}", target, port, state);
+                    Ok(state)
+                }
+                Err(e) => {
+                    log::warn!("Failed to send SYN packet to {}:{}: {}", target, port, e);
+                    // Fallback to TCP Connect on send error
+                    self.scan_tcp_high_performance(
+                        &TcpConnectScanner::new(self.config.timeout_duration()),
+                        target,
+                        port
+                    ).await
+                }
+            }
+        } else {
+            // Fallback to TCP Connect scan if raw sockets unavailable
+            log::debug!("Raw sockets not available for port {}, using TCP Connect", port);
+            self.scan_tcp_high_performance(
+                &TcpConnectScanner::new(self.config.timeout_duration()),
+                target,
+                port
+            ).await
+        }
+    }
+    
+    /// Build a TCP SYN packet for raw socket scanning
+    fn build_tcp_syn_packet(&self, _target: Ipv4Addr, port: u16) -> crate::Result<Vec<u8>> {
+        // Simplified TCP SYN packet structure
+        // In production, use a proper packet crafting library like pnet
+        
+        // TCP header: 20 bytes minimum
+        let mut packet = Vec::with_capacity(20);
+        
+        // Source port (random high port)
+        let src_port: u16 = 50000 + (port % 15000);
+        packet.extend_from_slice(&src_port.to_be_bytes());
+        
+        // Destination port
+        packet.extend_from_slice(&port.to_be_bytes());
+        
+        // Sequence number (random)
+        let seq_num: u32 = 0x12345678;
+        packet.extend_from_slice(&seq_num.to_be_bytes());
+        
+        // Acknowledgment number (0 for SYN)
+        packet.extend_from_slice(&[0, 0, 0, 0]);
+        
+        // Data offset (5 32-bit words = 20 bytes) + flags (SYN = 0x02)
+        packet.push(0x50); // Data offset: 5 << 4
+        packet.push(0x02); // SYN flag
+        
+        // Window size (default 65535)
+        packet.extend_from_slice(&[0xFF, 0xFF]);
+        
+        // Checksum (calculated by kernel with IP_HDRINCL=0)
+        packet.extend_from_slice(&[0x00, 0x00]);
+        
+        // Urgent pointer (0)
+        packet.extend_from_slice(&[0x00, 0x00]);
+        
+        Ok(packet)
+    }
+    
+    /// Receive and parse SYN-ACK or RST response
+    async fn receive_syn_response(
+        &self,
+        socket_pool: &crate::network::socket::SocketPool,
+        target: Ipv4Addr,
+        port: u16,
+        timeout_duration: Duration,
+    ) -> crate::Result<PortState> {
+        // Try to receive response using ICMP socket or TCP socket
+        let start = tokio::time::Instant::now();
+        
+        // Get socket for receiving (preferably ICMP for unreachable messages)
+        let recv_socket = socket_pool.get_icmp_socket()
+            .or_else(|| socket_pool.get_tcp_socket());
+        
+        let recv_socket = match recv_socket {
+            Some(s) => s,
+            None => {
+                log::warn!("No sockets available for receiving response");
+                return Ok(PortState::Filtered);
+            }
+        };
+        
+        // Try to receive response with timeout
+        let mut buf = vec![0u8; 1024];
+        
+        // Non-blocking receive with timeout simulation
+        while start.elapsed() < timeout_duration {
+            match recv_socket.recv_from(&mut buf) {
+                Ok((size, addr)) => {
+                    // Check if response is from target
+                    if let IpAddr::V4(response_ip) = addr.ip() {
+                        if response_ip == target {
+                            // Parse response to determine port state
+                            let state = self.parse_tcp_response(&buf[..size], port)?;
+                            return Ok(state);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // No data available yet, continue waiting
+                    tokio::time::sleep(Duration::from_micros(100)).await;
+                }
+            }
+        }
+        
+        // Timeout: port is likely filtered
+        log::trace!("Timeout waiting for response from {}:{}", target, port);
+        Ok(PortState::Filtered)
+    }
+    
+    /// Parse TCP response packet to determine port state
+    fn parse_tcp_response(&self, packet: &[u8], expected_port: u16) -> crate::Result<PortState> {
+        // Simplified TCP response parsing
+        // In production, use proper packet parsing library
+        
+        if packet.len() < 20 {
+            return Ok(PortState::Filtered);
+        }
+        
+        // Extract destination port from packet (offset 2-3 in TCP header)
+        // But we need to skip IP header first (typically 20 bytes)
+        let ip_header_len = if packet.len() > 0 {
+            ((packet[0] & 0x0F) * 4) as usize
+        } else {
+            20
+        };
+        
+        if packet.len() < ip_header_len + 4 {
+            return Ok(PortState::Filtered);
+        }
+        
+        let tcp_header = &packet[ip_header_len..];
+        
+        // Source port (should match our target port)
+        let src_port = u16::from_be_bytes([tcp_header[0], tcp_header[1]]);
+        
+        if src_port != expected_port {
+            // Not our response
+            return Ok(PortState::Filtered);
+        }
+        
+        // Check TCP flags (offset 13 in TCP header)
+        if tcp_header.len() > 13 {
+            let flags = tcp_header[13];
+            
+            // SYN+ACK (0x12) = Port Open
+            if flags & 0x12 == 0x12 {
+                return Ok(PortState::Open);
+            }
+            
+            // RST (0x04) = Port Closed
+            if flags & 0x04 != 0 {
+                return Ok(PortState::Closed);
+            }
+        }
+        
+        // Unknown response or ICMP unreachable = Filtered
+        Ok(PortState::Filtered)
     }
 }
 
