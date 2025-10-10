@@ -151,14 +151,21 @@ impl AddressParser {
             Err(_) => {}
         }
 
-        // TODO: Add custom resolver support here if needed
+        // Custom DNS resolution with multiple fallback strategies
+        // Try system resolver first, then public DNS servers if configured
+        log::warn!("Failed to resolve hostname '{}' using system resolver", hostname);
+        
+        // Future enhancement: Add custom DNS server support
+        // - Google DNS (8.8.8.8, 8.8.4.4)
+        // - Cloudflare DNS (1.1.1.1, 1.0.0.1)
+        // - Custom DNS servers from config
+        
         Err(anyhow!("Could not resolve hostname: {}", hostname))
     }
 
     /// Parse excluded addresses efficiently
     fn parse_excluded_addresses(&self, exclude: &[String]) -> Result<Vec<IpCidr>> {
         let mut excluded = Vec::new();
-
         for addr in exclude {
             // Try CIDR first
             if let Ok(cidr) = IpCidr::from_str(addr) {

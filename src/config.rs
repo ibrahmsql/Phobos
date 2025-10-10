@@ -53,6 +53,18 @@ pub struct ScanConfig {
     
     /// Maximum response time for adaptive tuning
     pub max_response_time: u64,
+    
+    /// Maximum number of retries for failed connections
+    pub max_retries: Option<u32>,
+    
+    /// Source port to use for scanning
+    pub source_port: Option<u16>,
+    
+    /// Network interface to use
+    pub interface: Option<String>,
+    
+    /// IPs/CIDR ranges to exclude from scanning
+    pub exclude_ips: Option<Vec<String>>,
 }
 
 impl Default for ScanConfig {
@@ -61,9 +73,9 @@ impl Default for ScanConfig {
             target: "127.0.0.1".to_string(),
             ports: (1..=1000).collect(),
             technique: ScanTechnique::Connect,
-            threads: 2000, // Moderate concurrent connection count for accuracy
-            timeout: 6000, // Higher timeout for reliable detection under load
-            rate_limit: 10_000_000, // 10M packets per second - Ultra-fast scanning
+            threads: 5000, // Ultra-high concurrency (default 5000)
+            timeout: 1500, // Fast timeout (1.5s)
+            rate_limit: 20_000_000, // 20M packets per second - Ultra-fast scanning
             stealth_options: None,
             timing_template: 3, // Default timing template
             top_ports: None,
@@ -73,6 +85,10 @@ impl Default for ScanConfig {
             adaptive_learning: true, // Enable adaptive learning for performance optimization
             min_response_time: 50, // 50ms minimum response time
             max_response_time: 3000, // 3s maximum response time
+            max_retries: Some(2), // Default 2 retries for reliability
+            source_port: None, // Auto-select source port
+            interface: None, // Auto-select interface
+            exclude_ips: None, // No exclusions by default
         }
     }
 }
@@ -132,13 +148,19 @@ impl ScanConfig {
         let cpu_cores = num_cpus::get();
         let memory_factor = if self.ports.len() > 10000 { 2 } else { 1 };
         
-        // Calculate base batch considering CPU cores and memory
+        // Intelligent batch sizing for maximum speed with accuracy
         let base_batch = if self.ports.len() > 60000 {
-            // Full port range - much smaller batches for accuracy
-            std::cmp::max(100, self.ports.len() / (self.threads * 4))
+            // Full port range - LARGE batches for ultra-fast speed
+            // Using 2000-3000 for optimal balance
+            let optimal = self.ports.len() / (self.threads / 2).max(1);
+            std::cmp::max(1500, std::cmp::min(optimal, 3000))
+        } else if self.ports.len() > 10000 {
+            // Medium ranges - balanced approach
+            std::cmp::max(500, self.ports.len() / self.threads)
         } else {
+            // Small ranges - smaller batches
             std::cmp::max(
-                50, // Minimum batch size
+                100, // Minimum batch size
                 std::cmp::min(
                     (self.rate_limit as usize) / (self.threads * cpu_cores),
                     self.ports.len() / (self.threads * memory_factor)
@@ -146,8 +168,8 @@ impl ScanConfig {
             )
         };
         
-        // Cap at more conservative maximum for better accuracy
-        std::cmp::min(base_batch, 500)
+        // Cap at maximum for ultra-fast scanning
+        std::cmp::min(base_batch, 3000)
     }
     
     /// Load configuration from TOML file

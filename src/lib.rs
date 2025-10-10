@@ -6,6 +6,7 @@ pub mod adaptive;
 pub mod benchmark;
 pub mod config;
 pub mod error;
+pub mod gpu;
 pub mod intelligence;
 pub mod network;
 pub mod output;
