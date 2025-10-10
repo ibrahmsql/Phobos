@@ -1,0 +1,31 @@
+____  _   _   ___   ____   ___   ____   _____ 
+|  _ \| | | | / _ \ | __ ) / _ \ |  _ \ | ____| 
+| |_) | |_| || | | ||  _ \| | | || | | ||  _|  
+|  __/|  _  || |_| || |_) | |_| || |_| || |___ 
+|_|   |_| |_| \___/ |____/ \___/ |____/ |_____| 
+
+Phobos – The God of Fear. Forged in Rust ⚡
+
+------------------------------------------------------
+: 🔗 `https://github.com/ibrahmsql/phobos`            :
+: ⚡ written in Rust | faster than the old gods        :
+------------------------------------------------------
+
+"Let your ports tremble."
+
+[~] Using custom port range: 1-10000
+[~] Scan order: serial (sequential)
+[~] File limit higher than batch size. Can increase speed by increasing batch size '-b 10000'.
+[!] High batch size detected (5000). Consider lowering it if you experience issues.
+Starting Phobos v1.1.1
+Target: 45.33.32.156
+Ports: 10000 ports
+Technique: Connect
+Threads: 100
+Batch size: 5000
+
+
+Nmap scan report for 45.33.32.156 (45.33.32.156)
+Host is up.
+Not shown: 10000 closed tcp ports
+No open ports found.

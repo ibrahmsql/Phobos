@@ -1,0 +1,21 @@
+Phobos vs RustScan Benchmark Report
+Generated: Fri 10 Oct 19:34:10 +03 2025
+Target: 45.33.32.156
+
+Test 1 - Common Ports (5 ports):
+  Phobos:   .003048715s
+  RustScan: 1.502688674s
+
+Test 2 - Port Range 1-1000:
+  Phobos:   .002993950s
+  RustScan: 1.615131189s
+
+Test 3 - Port Range 1-10000:
+  Phobos:   .002612146s
+  RustScan: 4.755238347s
+
+Total Time:
+  Phobos:   .008654811s
+  RustScan: 7.873058210s
+
+Winner: Phobos (99.00% faster)
