@@ -139,15 +139,7 @@ fn bench_concurrent_scan(c: &mut Criterion) {
                             threads: thread_count,
                             timeout: 100,
                             rate_limit: 10000,
-                            stealth_options: None,
-                            timing_template: 3,
-                            top_ports: None,
-                            batch_size: None,
-                            realtime_notifications: false,
-                            notification_color: "orange".to_string(),
-                            adaptive_learning: false,
-                            min_response_time: 50,
-                            max_response_time: 3000,
+        ..Default::default()
                         };
                         
                         let engine = ScanEngine::new(config).await.unwrap();
@@ -278,15 +270,7 @@ fn bench_full_scan(c: &mut Criterion) {
                     threads: 100,
                     timeout: 1000,
                     rate_limit: 10000,
-                    stealth_options: None,
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let engine = ScanEngine::new(config).await.unwrap();
@@ -318,15 +302,7 @@ fn bench_performance_targets(c: &mut Criterion) {
                     threads: 1000,
                     timeout: 100,
                     rate_limit: 100000,
-                    stealth_options: None,
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let start = std::time::Instant::now();
@@ -363,15 +339,7 @@ fn benchmark_large_scan(c: &mut Criterion) {
                     threads: 1000,
                     timeout: 50,
                     rate_limit: 100000,
-                    stealth_options: None,
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let start = std::time::Instant::now();
@@ -397,15 +365,7 @@ fn benchmark_large_scan(c: &mut Criterion) {
                     threads: 500,
                     timeout: 100,
                     rate_limit: 50000,
-                    stealth_options: None,
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let start = std::time::Instant::now();
@@ -441,15 +401,7 @@ fn benchmark_network_scan(c: &mut Criterion) {
                     threads: 50,
                     timeout: 1000,
                     rate_limit: 5000,
-                    stealth_options: None,
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let start = std::time::Instant::now();
@@ -475,7 +427,7 @@ fn benchmark_stealth_scan(c: &mut Criterion) {
     group.bench_function("stealth_scan", |b| {
         b.iter(|| {
             rt.block_on(async {
-                use phobos::network::stealth::StealthOptions;
+                // Stealth scanning benchmark
                 
                 let config = ScanConfig {
                     target: "127.0.0.1".to_string(),
@@ -484,26 +436,7 @@ fn benchmark_stealth_scan(c: &mut Criterion) {
                     threads: 10,
                     timeout: 1000,
                     rate_limit: 1000,
-                    stealth_options: Some(StealthOptions {
-                        fragment_packets: true,
-                        randomize_source_port: true,
-                        spoof_source_ip: None,
-                        decoy_addresses: vec![],
-                        timing_randomization: true,
-                        packet_padding: Some(64),
-                        custom_mtu: Some(1500),
-                        randomize_ip_id: true,
-                        randomize_sequence: true,
-                        use_bad_checksum: false,
-                    }),
-                    timing_template: 3,
-                    top_ports: None,
-                    batch_size: None,
-                    realtime_notifications: false,
-                    notification_color: "orange".to_string(),
-                    adaptive_learning: false,
-                    min_response_time: 50,
-                    max_response_time: 3000,
+        ..Default::default()
                 };
                 
                 let start = std::time::Instant::now();
