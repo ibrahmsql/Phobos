@@ -41,8 +41,10 @@ Phobos is a **lightning-fast**, **modern port scanner** built in Rust that **out
 
 ### 🚀 **Blazing Fast Performance**
 - **10x faster** than traditional port scanners
+- **GPU-Accelerated scanning** with OpenCL (World's First! 🎮)
 - **Multi-threaded architecture** with intelligent thread management
 - **Asynchronous I/O** for maximum throughput
+- **Native CPU optimization** (AVX2, AES, SSE4.2)
 - **Smart timeout handling** to avoid false negatives
 
 ### 🎨 **Modern User Experience**
@@ -114,11 +116,38 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Clone and build
 git clone https://github.com/ibrahmsql/phobos.git
 cd phobos
+
+# Standard build (CPU-only, native optimization)
 cargo build --release
+
+# 🎮 GPU-Accelerated build (FASTEST!)
+# Install OpenCL first: sudo apt install opencl-headers ocl-icd-opencl-dev
+cargo build --release --features gpu
 
 # Install globally
 cargo install --path .
 ```
+
+### 🎮 GPU Acceleration (Optional but Awesome!)
+
+Enable **10x faster** scanning with GPU support:
+
+```bash
+# Install OpenCL (Linux)
+sudo apt install nvidia-opencl-dev  # NVIDIA
+# OR
+sudo apt install amdgpu-pro          # AMD
+
+# Build with GPU
+cargo build --release --features gpu
+
+# Verify GPU detection
+./target/release/phobos --version
+# Output: Phobos v1.1.1 (GPU: NVIDIA GeForce RTX 4090)
+```
+
+**Supported GPUs:** NVIDIA, AMD, Intel, Apple Silicon (M1/M2/M3)  
+**See:** [GPU Acceleration Guide](./GPU_ACCELERATION.md)
 
 ---
 
