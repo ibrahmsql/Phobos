@@ -50,7 +50,16 @@ once_cell = "1.21.3"
 rayon = "1.8"
 tempfile = "3.8"
 
+# GPU Acceleration (Optional)
+ocl = { version = "0.19", optional = true }
+ocl-core = { version = "0.11", optional = true }
 
+[build-dependencies]
+num_cpus = "1.16"
+
+[features]
+default = []
+gpu = ["ocl", "ocl-core"]  # GPU acceleration feature
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -63,12 +72,25 @@ harness = false
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+lto = "fat"          # Full LTO: Maximum speed
+codegen-units = 1    # Single unit: Best optimization
 panic = "abort"
 strip = true
+# Native CPU optimization - Sistem özelliklerine göre optimize et
+
+# RustScan'den DAHA HIZLI: Native CPU + Aggressive optimizations
+[profile.release.build-override]
+opt-level = 3
+
+# Hızlı development build
+[profile.release-fast]
+inherits = "release"
+lto = "thin"         # Thin LTO: Hızlı build
+codegen-units = 16   # Paralel compile
+opt-level = 2
 
 [profile.dev]
 opt-level = 1
+incremental = true
 
 # Registry configuration removed
