@@ -131,15 +131,9 @@ async fn test_stealth_scanning_security() {
         threads: 1,
         timeout: 1000,
         rate_limit: 100, // Low rate for stealth
-        stealth_options: None, // Simplified for testing
         timing_template: 1, // Paranoid
-        top_ports: None,
         batch_size: Some(1),
-        realtime_notifications: false,
-        notification_color: "red".to_string(),
-        adaptive_learning: false,
-        min_response_time: 100,
-        max_response_time: 5000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;
@@ -188,15 +182,9 @@ async fn test_security_compliance() {
         threads: 2,
         timeout: 1000,
         rate_limit: 50, // Conservative rate limit
-        stealth_options: None,
         timing_template: 2, // Polite timing
-        top_ports: None,
         batch_size: Some(2),
-        realtime_notifications: false,
-        notification_color: "blue".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;
@@ -284,15 +272,7 @@ async fn test_input_validation() {
             threads: 1,
             timeout: 1000,
             rate_limit: 100,
-            stealth_options: None,
-            timing_template: 3,
-            top_ports: None,
-            batch_size: Some(1),
-            realtime_notifications: false,
-            notification_color: "green".to_string(),
-            adaptive_learning: false,
-            min_response_time: 50,
-            max_response_time: 2000,
+        ..Default::default()
         };
         
         let engine_result = ScanEngine::new(config).await;
@@ -343,15 +323,7 @@ async fn test_privilege_escalation_prevention() {
         threads: 1,
         timeout: 1000,
         rate_limit: 100,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: Some(1),
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 2000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;
@@ -390,15 +362,8 @@ async fn test_resource_exhaustion_prevention() {
         threads: 5, // Limited threads
         timeout: 500, // Short timeout
         rate_limit: 200, // Rate limited
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
         batch_size: Some(10), // Batched processing
-        realtime_notifications: false,
-        notification_color: "cyan".to_string(),
-        adaptive_learning: false,
-        min_response_time: 10,
-        max_response_time: 1000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;

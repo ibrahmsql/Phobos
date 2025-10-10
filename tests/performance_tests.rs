@@ -53,15 +53,7 @@ async fn test_scan_engine_performance() {
         threads: 10,
         timeout: 1000,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 4, // Aggressive timing
-        top_ports: None,
-        batch_size: Some(10),
-        realtime_notifications: false,
-        notification_color: "green".to_string(),
-        adaptive_learning: true,
-        min_response_time: 10,
-        max_response_time: 2000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;
@@ -141,15 +133,7 @@ async fn test_memory_efficiency() {
             threads: 1,
             timeout: 1000,
             rate_limit: 100,
-            stealth_options: None,
-            timing_template: 3,
-            top_ports: None,
-            batch_size: Some(1),
-            realtime_notifications: false,
-            notification_color: "blue".to_string(),
-            adaptive_learning: false,
-            min_response_time: 50,
-            max_response_time: 2000,
+        ..Default::default()
         };
         
         if let Ok(engine) = ScanEngine::new(config).await {
@@ -176,15 +160,8 @@ async fn test_concurrent_performance() {
         threads: 2,
         timeout: 1000,
         rate_limit: 500,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
         batch_size: Some(1),
-        realtime_notifications: false,
-        notification_color: "yellow".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 2000,
+        ..Default::default()
     }).collect();
     
     let start = Instant::now();
@@ -222,15 +199,7 @@ async fn test_adaptive_performance() {
         threads: 4,
         timeout: 500,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 4,
-        top_ports: None,
-        batch_size: Some(2),
-        realtime_notifications: false,
-        notification_color: "purple".to_string(),
-        adaptive_learning: true, // Enable adaptive learning
-        min_response_time: 10,
-        max_response_time: 1000,
+        ..Default::default()
     };
     
     let engine_result = ScanEngine::new(config).await;

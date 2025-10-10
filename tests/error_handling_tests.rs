@@ -208,15 +208,7 @@ async fn test_scan_with_fallback_integration() {
         threads: 1,
         timeout: 1000,
         rate_limit: 100,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
+        ..Default::default()
     };
     
     // Test fallback mechanism with invalid target first
