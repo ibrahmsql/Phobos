@@ -3,32 +3,32 @@ use phobos::scanner::engine::ScanEngine;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
-/// Kapsamlı performans testi - farklı port aralıkları ve konfigürasyonlar
+/// Comprehensive performance test - different port ranges and configurations
 #[tokio::test]
 async fn test_comprehensive_performance_analysis() {
-    println!("🚀 Kapsamlı performans analizi başlıyor...");
+    println!("🚀 Starting comprehensive performance analysis...");
     
     let test_scenarios = vec![
         (
-            "Hızlı Tarama - Az Port",
+            "Fast Scan - Few Ports",
             vec![22, 80, 443, 8080],
             50,   // threads
             1000, // timeout ms
         ),
         (
-            "Orta Tarama - Orta Port",
+            "Medium Scan - Medium Ports",
             (1..=100).collect::<Vec<u16>>(),
             100,  // threads
             2000, // timeout ms
         ),
         (
-            "Yoğun Tarama - Çok Port",
+            "Intensive Scan - Many Ports",
             (1..=1000).collect::<Vec<u16>>(),
             200,  // threads
             3000, // timeout ms
         ),
         (
-            "Web Servisleri Tarama",
+            "Web Services Scan",
             vec![80, 443, 8080, 8443, 3000, 5000, 8000, 9000, 3001, 8001],
             75,   // threads
             1500, // timeout ms
@@ -36,9 +36,9 @@ async fn test_comprehensive_performance_analysis() {
     ];
     
     for (scenario_name, ports, threads, timeout_ms) in test_scenarios {
-        println!("\n📊 Senaryo: {}", scenario_name);
-        println!("   - Port sayısı: {}", ports.len());
-        println!("   - Thread sayısı: {}", threads);
+        println!("\n📊 Scenario: {}", scenario_name);
+        println!("   - Port count: {}", ports.len());
+        println!("   - Thread count: {}", threads);
         println!("   - Timeout: {}ms", timeout_ms);
         
         let config = ScanConfig::new("127.0.0.1".to_string())
@@ -55,15 +55,15 @@ async fn test_comprehensive_performance_analysis() {
                         let duration = start_time.elapsed();
                         let scan_rate = result.scan_rate();
                         
-                        println!("   ✅ Başarılı!");
-                        println!("   - Süre: {:?}", duration);
-                        println!("   - Taranan portlar: {}", result.total_ports());
-                        println!("   - Açık portlar: {}", result.open_ports.len());
-                        println!("   - Kapalı portlar: {}", result.closed_ports.len());
-                        println!("   - Filtrelenmiş portlar: {}", result.filtered_ports.len());
-                        println!("   - Tarama hızı: {:.2} port/saniye", scan_rate);
+                        println!("   ✅ Success!");
+                        println!("   - Duration: {:?}", duration);
+                        println!("   - Scanned ports: {}", result.total_ports());
+                        println!("   - Open ports: {}", result.open_ports.len());
+                        println!("   - Closed ports: {}", result.closed_ports.len());
+                        println!("   - Filtered ports: {}", result.filtered_ports.len());
+                        println!("   - Scan rate: {:.2} ports/second", scan_rate);
                         
-                        // Port atlama kontrolü
+                        // Port skipping check
                         let scanned_ports: Vec<u16> = result.port_results
                             .iter()
                             .map(|r| r.port)
@@ -77,52 +77,52 @@ async fn test_comprehensive_performance_analysis() {
                         }
                         
                         if missing_ports.is_empty() {
-                            println!("   ✅ Port atlama yok - tüm portlar tarandı");
+                            println!("   ✅ No port skipping - all ports scanned");
                         } else {
-                            println!("   ⚠️  Atlanan portlar: {:?}", missing_ports);
+                            println!("   ⚠️  Skipped ports: {:?}", missing_ports);
                         }
                         
-                        // Performans değerlendirmesi
+                        // Performance evaluation
                         if scan_rate > 1000.0 {
-                            println!("   🏆 Mükemmel performans!");
+                            println!("   🏆 Excellent performance!");
                         } else if scan_rate > 500.0 {
-                            println!("   👍 İyi performans");
+                            println!("   👍 Good performance");
                         } else if scan_rate > 100.0 {
-                            println!("   👌 Kabul edilebilir performans");
+                            println!("   👌 Acceptable performance");
                         } else {
-                            println!("   ⚠️  Yavaş performans");
+                            println!("   ⚠️  Slow performance");
                         }
                     },
                     Ok(Err(e)) => {
-                        println!("   ❌ Tarama hatası: {:?}", e);
+                        println!("   ❌ Scan error: {:?}", e);
                     },
                     Err(_) => {
-                        println!("   ⏰ Zaman aşımı (30s)");
+                        println!("   ⏰ Timeout (30s)");
                     }
                 }
             },
             Err(e) => {
-                println!("   ❌ Engine oluşturulamadı: {:?}", e);
+                println!("   ❌ Failed to create engine: {:?}", e);
             }
         }
     }
     
-    println!("\n🎯 Kapsamlı performans analizi tamamlandı!");
+    println!("\n🎯 Comprehensive performance analysis completed!");
 }
 
-/// Farklı flag kombinasyonlarının optimizasyon testi
+/// Different flag combinations optimization test
 #[tokio::test]
 async fn test_flag_optimization_combinations() {
-    println!("⚙️  Flag optimizasyon kombinasyonları test ediliyor...");
+    println!("⚙️  Testing flag optimization combinations...");
     
     let base_ports = vec![22, 80, 443, 8080, 3000];
     
     let flag_combinations = vec![
-        ("Ultra Hızlı", 25, 500),   // az thread, kısa timeout
-        ("Hızlı", 50, 1000),        // orta thread, orta timeout
-        ("Dengeli", 100, 2000),     // çok thread, uzun timeout
-        ("Yoğun", 200, 3000),       // çok thread, çok uzun timeout
-        ("Konservatif", 10, 5000),  // az thread, çok uzun timeout
+        ("Ultra Fast", 25, 500),      // low threads, short timeout
+        ("Fast", 50, 1000),            // medium threads, medium timeout
+        ("Balanced", 100, 2000),       // high threads, long timeout
+        ("Intensive", 200, 3000),      // very high threads, very long timeout
+        ("Conservative", 10, 5000),    // low threads, very long timeout
     ];
     
     let mut best_combination = ("None", 0, 0, 0.0, Duration::from_secs(0));
@@ -144,76 +144,76 @@ async fn test_flag_optimization_combinations() {
                         let duration = start_time.elapsed();
                         let scan_rate = result.scan_rate();
                         
-                        println!("  ✅ Süre: {:?}, Hız: {:.2} port/s, Portlar: {}", 
+                        println!("  ✅ Duration: {:?}, Speed: {:.2} port/s, Ports: {}", 
                                duration, scan_rate, result.total_ports());
                         
-                        // En iyi kombinasyonu bul (hız ve güvenilirlik dengesi)
+                        // Find best combination (balance between speed and reliability)
                         let score = scan_rate * (result.total_ports() as f64 / base_ports.len() as f64);
                         if score > best_combination.3 {
                             best_combination = (name, threads, timeout_ms, score, duration);
                         }
                     },
                     Ok(Err(e)) => {
-                        println!("  ❌ Hata: {:?}", e);
+                        println!("  ❌ Error: {:?}", e);
                     },
                     Err(_) => {
-                        println!("  ⏰ Zaman aşımı");
+                        println!("  ⏰ Timeout");
                     }
                 }
             },
             Err(e) => {
-                println!("  ❌ Engine hatası: {:?}", e);
+                println!("  ❌ Engine error: {:?}", e);
             }
         }
     }
     
-    println!("\n🏆 EN OPTIMAL KOMBİNASYON:");
-    println!("   - İsim: {}", best_combination.0);
-    println!("   - Thread sayısı: {}", best_combination.1);
+    println!("\n🏆 MOST OPTIMAL COMBINATION:");
+    println!("   - Name: {}", best_combination.0);
+    println!("   - Thread count: {}", best_combination.1);
     println!("   - Timeout: {}ms", best_combination.2);
-    println!("   - Performans skoru: {:.2}", best_combination.3);
-    println!("   - Süre: {:?}", best_combination.4);
+    println!("   - Performance score: {:.2}", best_combination.3);
+    println!("   - Duration: {:?}", best_combination.4);
     
-    println!("\n💡 ÖNERİLER:");
+    println!("\n💡 RECOMMENDATIONS:");
     if best_combination.1 <= 50 {
-        println!("   - Düşük thread sayısı optimal - sistem kaynaklarını verimli kullanıyor");
+        println!("   - Low thread count is optimal - efficient use of system resources");
     } else {
-        println!("   - Yüksek thread sayısı gerekli - yoğun paralel işlem");
+        println!("   - High thread count needed - intensive parallel processing");
     }
     
     if best_combination.2 <= 1000 {
-        println!("   - Kısa timeout optimal - hızlı yanıt");
+        println!("   - Short timeout is optimal - fast response");
     } else {
-        println!("   - Uzun timeout gerekli - güvenilir sonuç");
+        println!("   - Long timeout needed - reliable results");
     }
 }
 
-/// Gerçek dünya senaryoları testi
+/// Real world scenarios test
 #[tokio::test]
 async fn test_real_world_scenarios() {
-    println!("🌍 Gerçek dünya senaryoları test ediliyor...");
+    println!("🌍 Testing real world scenarios...");
     
     let scenarios = vec![
         (
-            "Web Sunucu Tarama",
+            "Web Server Scan",
             vec![80, 443, 8080, 8443, 8000, 8001, 8888, 9000, 9001, 9080],
         ),
         (
-            "Veritabanı Servisleri",
+            "Database Services",
             vec![3306, 5432, 1433, 1521, 27017, 6379, 11211, 5984],
         ),
         (
-            "Sistem Servisleri",
+            "System Services",
             vec![22, 23, 21, 25, 53, 110, 143, 993, 995],
         ),
         (
-            "Geliştirme Portları",
+            "Development Ports",
             vec![3000, 3001, 4000, 4200, 5000, 5173, 8080, 8081, 9000, 9001],
         ),
     ];
     
     for (scenario_name, ports) in scenarios {
-        println!("\n📋 Senaryo: {}", scenario_name);
+        println!("\n📋 Scenario: {}", scenario_name);
         
         let config = ScanConfig::new("127.0.0.1".to_string())
             .with_ports(ports.clone())
@@ -228,31 +228,31 @@ async fn test_real_world_scenarios() {
                     Ok(Ok(result)) => {
                         let duration = start_time.elapsed();
                         
-                        println!("   ✅ Tamamlandı: {:?}", duration);
-                        println!("   - Hedef portlar: {}", ports.len());
-                        println!("   - Taranan portlar: {}", result.total_ports());
-                        println!("   - Tarama oranı: {:.1}%", 
+                        println!("   ✅ Completed: {:?}", duration);
+                        println!("   - Target ports: {}", ports.len());
+                        println!("   - Scanned ports: {}", result.total_ports());
+                        println!("   - Scan ratio: {:.1}%", 
                                (result.total_ports() as f64 / ports.len() as f64) * 100.0);
                         
                         if result.total_ports() == ports.len() {
-                            println!("   🎯 Mükemmel - tüm portlar tarandı!");
+                            println!("   🎯 Perfect - all ports scanned!");
                         } else {
-                            println!("   ⚠️  Bazı portlar atlandı");
+                            println!("   ⚠️  Some ports were skipped");
                         }
                     },
                     Ok(Err(e)) => {
-                        println!("   ❌ Hata: {:?}", e);
+                        println!("   ❌ Error: {:?}", e);
                     },
                     Err(_) => {
-                        println!("   ⏰ Zaman aşımı");
+                        println!("   ⏰ Timeout");
                     }
                 }
             },
             Err(e) => {
-                println!("   ❌ Engine hatası: {:?}", e);
+                println!("   ❌ Engine error: {:?}", e);
             }
         }
     }
     
-    println!("\n🎉 Gerçek dünya senaryoları testi tamamlandı!");
+    println!("\n🎉 Real world scenarios test completed!");
 }
