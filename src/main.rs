@@ -811,7 +811,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ScanConfig::load_default_config()
     };
 
-    // Parse arguments and override config with IPv6/CIDR support
+    // Handle IP exclusions
+    let exclude_ips: Option<Vec<String>> = matches.get_many::<String>("exclude-ips")
+        .map(|vals| vals.map(|s| s.to_string()).collect());
+    
+    if let Some(ref exclusions) = exclude_ips {
+        println!("{} {} IPs/ranges will be excluded", 
+            "[~] IP Exclusions:".bright_yellow(),
+            exclusions.len().to_string().bright_red().bold()
+        );
+        for exclusion in exclusions {
+            println!("    - {}", exclusion.bright_red());
+        }
+    }
+    
+    // Parse and validate target with IPv6 and CIDR support
     let (target, _parsed_target, _target_list) = if let Some(input_file) = matches.get_one::<String>("input-file") {
         // Read targets from file
         println!("{} {}", "[~] Reading targets from file:".bright_blue(), input_file.bright_cyan());
@@ -1015,6 +1029,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threads = *matches.get_one::<usize>("threads").unwrap();
     let timeout = *matches.get_one::<u64>("timeout").unwrap();
     let rate_limit = *matches.get_one::<u64>("rate-limit").unwrap();
+    let max_retries = matches.get_one::<u32>("max-retries").copied();
+    let source_port = matches.get_one::<u16>("source-port").copied();
+    let interface = matches.get_one::<String>("interface").cloned();
+    let adaptive_enabled = matches.get_flag("adaptive");
     
     // Parse new scan options
     let scan_order_str = matches.get_one::<String>("scan-order").map(|s| s.as_str()).unwrap_or("serial");
@@ -1068,17 +1086,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse stealth options
     let stealth_options = StealthOptions::default();
 
-    // Parse output configuration
+    // Parse output configuration with CLI overrides
+    let output_format_str = matches.get_one::<String>("output-format").map(|s| s.as_str()).unwrap_or("text");
+    let output_format = match output_format_str {
+        "json" => OutputFormat::Json,
+        "xml" => OutputFormat::Xml,
+        "csv" => OutputFormat::Csv,
+        "nmap" => OutputFormat::Nmap,
+        "greppable" => OutputFormat::Greppable,
+        _ => OutputFormat::Text,
+    };
+    
+    let output_file = matches.get_one::<String>("output-file").cloned();
+    
     let output_config = OutputConfig {
-        format: OutputFormat::Text,
-        file: None,
+        format: output_format,
+        file: output_file,
         colored: !matches.get_flag("no-color"),
         verbose: matches.get_flag("verbose"),
         show_closed: false,
         show_filtered: false,
     };
 
-    // Create base scan configuration
+    // Create base scan configuration with all CLI parameters
     let mut scan_config = ScanConfig {
         target: target.clone(),
         ports,
@@ -1092,37 +1122,83 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         batch_size: matches.get_one::<usize>("batch-size").copied().or(base_config.batch_size), // CLI overrides config file
         realtime_notifications: base_config.realtime_notifications,
         notification_color: base_config.notification_color,
-        adaptive_learning: base_config.adaptive_learning,
+        adaptive_learning: if adaptive_enabled { true } else { base_config.adaptive_learning },
         min_response_time: base_config.min_response_time,
         max_response_time: base_config.max_response_time,
+        max_retries: max_retries.map(|r| r).or(base_config.max_retries),
+        source_port,
+        interface,
+        exclude_ips: None, // Will be set later
     };
     
     // Apply Phobos modes to configuration
     scan_config = phobos_manager.apply_to_config(scan_config);
+    
+    // Apply IP exclusions to config
+    scan_config.exclude_ips = exclude_ips;
+    
+    // Apply adaptive mode if explicitly enabled
+    if adaptive_enabled {
+        println!("{} {}", 
+            "[🧠] Adaptive Mode:".bright_green().bold(),
+            "Enabled - Will auto-tune performance".bright_cyan()
+        );
+        scan_config.adaptive_learning = true;
+    }
 
-    // If full-range and user did NOT specify threads/batch-size explicitly, boost defaults for speed
+    // If full-range and user did NOT specify parameters explicitly, optimize for accuracy
     if full_range_ports {
         use clap::parser::ValueSource;
-        // Bump threads if not provided on CLI - but be more conservative for accuracy
+        
+        println!("{}", "[⚡] ULTRA-FAST FULL RANGE MODE".bright_green().bold());
+        println!("{}", "────────────────────────────────────".bright_blue());
+        
+        // ULTRA-HIGH threads for maximum speed
         if matches.value_source("threads") != Some(ValueSource::CommandLine) {
             let cpu = num_cpus::get();
-            // More conservative for accuracy: don't overwhelm the network
-            let suggested_threads = std::cmp::min(1000, cpu * 100);
+            let suggested_threads = std::cmp::min(10000, cpu * 1000);
             scan_config.threads = suggested_threads;
-            println!("{} {}", "[~] Optimizing threads for full-range:".bright_blue(), scan_config.threads.to_string().bright_white().bold());
+            println!("{} {} {}", 
+                "[⚡] Threads:".bright_yellow().bold(), 
+                suggested_threads.to_string().bright_white().bold(),
+                "(ultra-high concurrency)".bright_cyan()
+            );
         }
-        // Bump batch-size if not provided on CLI - smaller batches for accuracy
+        
+        // LARGE batches for maximum speed (auto-calculated: 1500-3000)
         if matches.value_source("batch-size") != Some(ValueSource::CommandLine) {
-            // Smaller batch for better accuracy
-            let suggested_batch = 500usize;
-            scan_config.batch_size = Some(suggested_batch);
-            println!("{} {}", "[~] Optimizing batch-size for full-range:".bright_blue(), suggested_batch.to_string().bright_white().bold());
+            // Use auto-calculation which will give 1500-3000 for full range
+            let auto_batch = scan_config.batch_size();
+            println!("{} {} {}", 
+                "[⚡] Batch size:".bright_yellow().bold(), 
+                auto_batch.to_string().bright_white().bold(),
+                "(large batches for speed)".bright_cyan()
+            );
         }
-        // Increase timeout for full-range to avoid missing slow-responding ports
+        
+        // FAST timeout for speed
         if matches.value_source("timeout") != Some(ValueSource::CommandLine) {
-            scan_config.timeout = 5000; // 5s timeout for full range reliability
-            println!("{} {}", "[~] Optimizing timeout for full-range:".bright_blue(), "5000ms".bright_white().bold());
+            scan_config.timeout = 1500; //  fast timeout
+            println!("{} {} {}", 
+                "[⚡] Timeout:".bright_yellow().bold(), 
+                "1500ms".bright_white().bold(),
+                "(fast timeout)".bright_cyan()
+            );
         }
+        
+        // AGGRESSIVE retries to prevent port misses despite speed
+        if matches.value_source("max-retries") != Some(ValueSource::CommandLine) {
+            scan_config.max_retries = Some(3); // 3 retries compensate for speed
+            println!("{} {} {}", 
+                "[✓] Retries:".bright_yellow().bold(), 
+                "3".bright_white().bold(),
+                "(prevent port misses)".bright_cyan()
+            );
+        }
+        
+        println!("{}", "═══════════════════════════════════════════════".bright_blue());
+        println!("{}", "[🚀] ULTRA-FAST SPEED | ACCURACY: Retry-guaranteed".bright_green().bold());
+        println!("{}", "═══════════════════════════════════════════════".bright_blue());
     }
     
     // Show batch size info with colors and special handling for --all

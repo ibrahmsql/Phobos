@@ -17,16 +17,8 @@ async fn test_localhost_connect_scan() {
         threads: 10,
         timeout: 1000,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let result = engine.scan().await.unwrap();
@@ -44,16 +36,8 @@ async fn test_invalid_target() {
         threads: 1,
         timeout: 1000,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let result = ScanEngine::new(config).await;
     assert!(result.is_err());
@@ -68,16 +52,8 @@ async fn test_scan_timeout() {
         threads: 1,
         timeout: 1,  // Very short timeout
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let result = timeout(Duration::from_secs(5), engine.scan()).await;
@@ -95,16 +71,8 @@ async fn test_rate_limiting() {
         threads: 1,
         timeout: 1000,
         rate_limit: 2,  // Very low rate limit
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let _result = engine.scan().await.unwrap();
@@ -123,16 +91,8 @@ async fn test_large_port_range() {
         threads: 100,
         timeout: 100,
         rate_limit: 10000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let result = engine.scan().await.unwrap();
@@ -151,16 +111,8 @@ async fn test_concurrent_scans() {
             threads: 10,
             timeout: 1000,
             rate_limit: 1000,
-            stealth_options: None,
-            timing_template: 3,
-            top_ports: None,
-            batch_size: None,
-            realtime_notifications: false,
-            notification_color: "orange".to_string(),
-            adaptive_learning: false,
-            min_response_time: 50,
-            max_response_time: 3000,
-        },
+        ..Default::default()
+},
         ScanConfig {
             target: "127.0.0.1".to_string(),
             ports: vec![443, 8080],
@@ -168,16 +120,8 @@ async fn test_concurrent_scans() {
             threads: 10,
             timeout: 1000,
             rate_limit: 1000,
-            stealth_options: None,
-            timing_template: 3,
-            top_ports: None,
-            batch_size: None,
-            realtime_notifications: false,
-            notification_color: "orange".to_string(),
-            adaptive_learning: false,
-            min_response_time: 50,
-            max_response_time: 3000,
-        },
+        ..Default::default()
+},
     ];
     
     let mut handles = Vec::new();
@@ -205,16 +149,8 @@ async fn test_scan_statistics() {
         threads: 5,
         timeout: 1000,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let result = engine.scan().await.unwrap();
@@ -234,16 +170,8 @@ async fn test_error_handling() {
         threads: 1,
         timeout: 1000,
         rate_limit: 1000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let result = ScanEngine::new(config).await;
     assert!(result.is_err());
@@ -266,16 +194,8 @@ async fn test_scan_techniques() {
             threads: 10,
             timeout: 1000,
             rate_limit: 1000,
-            stealth_options: None,
-            timing_template: 3,
-            top_ports: None,
-            batch_size: None,
-            realtime_notifications: false,
-            notification_color: "orange".to_string(),
-            adaptive_learning: false,
-            min_response_time: 50,
-            max_response_time: 3000,
-        };
+        ..Default::default()
+};
         
         let engine = ScanEngine::new(config).await.unwrap();
         let result = engine.scan().await.unwrap();
@@ -296,16 +216,8 @@ async fn test_performance_target() {
         threads: 200,
         timeout: 100,
         rate_limit: 50000,
-        stealth_options: None,
-        timing_template: 3,
-        top_ports: None,
-        batch_size: None,
-        realtime_notifications: false,
-        notification_color: "orange".to_string(),
-        adaptive_learning: false,
-        min_response_time: 50,
-        max_response_time: 3000,
-    };
+        ..Default::default()
+};
     
     let engine = ScanEngine::new(config).await.unwrap();
     let result = engine.scan().await.unwrap();
