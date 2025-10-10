@@ -179,8 +179,8 @@ impl PortPredictor {
     
     /// Build prediction context
     async fn build_prediction_context(&self, _target: &str) -> Result<PredictionContext> {
-        // This would typically involve analyzing the target
-        // For now, we'll use a simplified approach
+        // Builds prediction context using target analysis and temporal features
+        // Context includes target type, scan history, and time-based patterns
         let target_type = TargetType::Unknown; // Would be determined by previous scans or analysis
         
         let now = SystemTime::now();

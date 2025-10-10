@@ -42,6 +42,7 @@ pub struct OptimizationRecommendation {
 
 /// Configuration profile for different scenarios
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct ConfigProfile {
     name: String,
     threads: usize,
