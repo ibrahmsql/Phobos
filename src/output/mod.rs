@@ -522,7 +522,7 @@ impl OutputManager {
         let color_code = match color {
             "red" => "\x1b[31m",
             "green" => "\x1b[32m",
-            "neon_green" => "\x1b[38;2;57;255;20m", // Neon yeşil RGB(57,255,20)
+            "neon_green" => "\x1b[38;2;57;255;20m", // Neon green RGB(57,255,20)
             "yellow" => "\x1b[33m",
             "blue" => "\x1b[34m",
             "magenta" => "\x1b[35m",

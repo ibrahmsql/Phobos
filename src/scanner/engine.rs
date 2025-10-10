@@ -488,7 +488,7 @@ impl ScanEngine {
         while let Some(result) = futures.next().await {
             match result {
                 Ok(port_result) => {
-                    // Tüm port sonuçlarını ekle (açık, kapalı, filtrelenmiş)
+                    // Add all port results (open, closed, filtered)
                     results.push(port_result);
                     stats.packets_sent += 1;
                     stats.packets_received += 1;
