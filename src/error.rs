@@ -370,7 +370,7 @@ impl GracefulDegradation {
     /// Get the next fallback technique
     pub fn next_technique(&mut self) -> Option<crate::network::ScanTechnique> {
         if self.current_index < self.fallback_techniques.len() {
-            let technique = self.fallback_techniques[self.current_index].clone();
+            let technique = self.fallback_techniques[self.current_index];
             self.current_index += 1;
             Some(technique)
         } else {

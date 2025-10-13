@@ -260,8 +260,8 @@ impl PortPredictor {
             }
             
             // Cap probability and confidence
-            probability = probability.min(0.95).max(0.01);
-            confidence = confidence.min(1.0).max(0.0);
+            probability = probability.clamp(0.01, 0.95);
+            confidence = confidence.clamp(0.0, 1.0);
             
             if reasoning.is_empty() {
                 reasoning = "No specific patterns found".to_string();

@@ -378,9 +378,15 @@ impl BannerGrabber {
 /// Fast SSL/TLS analyzer
 pub struct SSLAnalyzer;
 
+impl Default for SSLAnalyzer {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl SSLAnalyzer {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
     
     /// Fast SSL analysis with real handshake
@@ -431,9 +437,15 @@ impl SSLAnalyzer {
 /// Fast vulnerability scanner
 pub struct VulnerabilityScanner;
 
+impl Default for VulnerabilityScanner {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl VulnerabilityScanner {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
     
     /// Fast vulnerability scanning based on service and version

@@ -2,15 +2,30 @@
 name = "phobos"
 version = "1.1.1"
 edition = "2021"
+rust-version = "1.70"  # Minimum Supported Rust Version (MSRV)
 authors = ["ibrahimsql"]
 description = "Phobos: The Blazingly Fast Rust-Based Port Scanner That Outspeeds Nmap & Masscan"
 license = "MIT"
 repository = "https://github.com/ibrahmsql/phobos"
 homepage = "https://github.com/ibrahmsql/phobos"
+documentation = "https://docs.rs/phobos"
 keywords = ["port-scanner", "network", "security", "rust", "nmap"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
-publish = ["github-packages"]
+license-file = "LICENSE"
+exclude = [
+    ".git*",
+    ".github/",
+    "assets/",
+    "benches/",
+    "tests/",
+    "examples/",
+    "*.sh",
+    "Makefile",
+    "justfile",
+    "*.nix",
+]
+# publish = ["github-packages"]  # Uncomment for crates.io publishing
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
@@ -59,7 +74,12 @@ num_cpus = "1.16"
 
 [features]
 default = []
-gpu = ["ocl", "ocl-core"]  # GPU acceleration feature
+# Performance features
+gpu = ["ocl", "ocl-core"]  # GPU acceleration (OpenCL)
+full = ["gpu"]  # All features enabled
+# Scanning technique features
+stealth = []  # Stealth scanning optimizations
+fast = []     # Maximum speed optimizations
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -69,6 +89,12 @@ proptest = "1.0"
 [[bench]]
 name = "performance"
 harness = false
+
+# Binary configuration
+[[bin]]
+name = "phobos"
+path = "src/main.rs"
+required-features = []  # No features required for basic binary
 
 [profile.release]
 opt-level = 3
@@ -92,5 +118,21 @@ opt-level = 2
 [profile.dev]
 opt-level = 1
 incremental = true
+debug = true
 
-# Registry configuration removed
+# Test profile optimizations
+[profile.test]
+opt-level = 1
+
+# Benchmark profile
+[profile.bench]
+inherits = "release"
+
+# Package metadata for crates.io
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Badges for crates.io
+[badges]
+maintenance = { status = "actively-developed" }
