@@ -23,15 +23,21 @@ pub struct Benchmark {
     timers: Vec<NamedTimer>,
 }
 
-impl Benchmark {
-    pub fn init() -> Self {
+impl Default for Benchmark {
+    fn default() -> Self {
         Self {
             timers: Vec::new(),
         }
     }
+}
+
+impl Benchmark {
+    pub fn init() -> Self {
+        Self::default()
+    }
     
     pub fn new() -> Self {
-        Self::init()
+        Self::default()
     }
     
     pub fn push(&mut self, timer: NamedTimer) {

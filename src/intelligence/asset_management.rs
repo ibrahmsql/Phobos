@@ -17,9 +17,15 @@ use super::service_detection::ServiceInfo;
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct AssetId(Uuid);
 
+impl Default for AssetId {
+    fn default() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
 impl AssetId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4())
+        Self::default()
     }
 }
 

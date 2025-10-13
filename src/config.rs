@@ -148,19 +148,18 @@ impl ScanConfig {
         let cpu_cores = num_cpus::get();
         let memory_factor = if self.ports.len() > 10000 { 2 } else { 1 };
         
-        // Intelligent batch sizing for maximum speed with accuracy
+        // Intelligent batch sizing for balanced speed + stability
         let base_batch = if self.ports.len() > 60000 {
-            // Full port range - LARGE batches for ultra-fast speed
-            // Using 2000-3000 for optimal balance
+            // Full port range - moderate batches for stability
             let optimal = self.ports.len() / (self.threads / 2).max(1);
-            std::cmp::max(1500, std::cmp::min(optimal, 3000))
+            optimal.clamp(1000, 3000)
         } else if self.ports.len() > 10000 {
             // Medium ranges - balanced approach
-            std::cmp::max(500, self.ports.len() / self.threads)
+            std::cmp::max(300, self.ports.len() / self.threads)
         } else {
             // Small ranges - smaller batches
             std::cmp::max(
-                100, // Minimum batch size
+                200, // Safe minimum batch size
                 std::cmp::min(
                     (self.rate_limit as usize) / (self.threads * cpu_cores),
                     self.ports.len() / (self.threads * memory_factor)
@@ -168,7 +167,7 @@ impl ScanConfig {
             )
         };
         
-        // Cap at maximum for ultra-fast scanning
+        // Cap at reasonable maximum for stability
         std::cmp::min(base_batch, 3000)
     }
     

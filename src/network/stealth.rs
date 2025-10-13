@@ -252,7 +252,7 @@ impl DecoyScanner {
             Protocol::Udp => {
                 let source_v4 = match source {
                     IpAddr::V4(addr) => addr,
-                    IpAddr::V6(_) => return vec![], // Skip IPv6 for now
+                    IpAddr::V6(_) => return vec![], // Skip IPv6 
                 };
                 let target_v4 = match target {
                     IpAddr::V4(addr) => addr,

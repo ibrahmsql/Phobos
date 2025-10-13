@@ -21,11 +21,11 @@ use std::io;
 #[cfg(unix)]
 use rlimit::{getrlimit, Resource};
 
-// Batch sizing constants (optimized for performance)
+// Batch sizing constants (balanced for speed + stability)
 const DEFAULT_FILE_DESCRIPTORS_LIMIT: u64 = 8000;
-const AVERAGE_BATCH_SIZE: u16 = 3000;
-const MIN_BATCH_SIZE: u16 = 100;
-const MAX_BATCH_SIZE: u16 = 15000;
+const AVERAGE_BATCH_SIZE: u16 = 2000; // Balanced for speed without overwhelming system
+const MIN_BATCH_SIZE: u16 = 200;      // Safe minimum for all systems
+const MAX_BATCH_SIZE: u16 = 6000;     // Reasonable max to avoid resource issues
 // use rayon::prelude::*; // Unused import removed
 
 /// Socket iterator for memory-efficient on-demand socket generation
@@ -382,7 +382,7 @@ impl ScanEngine {
     }
     
     /// High-performance socket scanning with minimal overhead
-    /// Balanced approach: 2 tries for accuracy with minimal error handling
+    /// Optimized: Fast timeout with smart retries for accuracy
     async fn scan_socket_high_performance(&self, socket: SocketAddr) -> crate::Result<PortResult> {
         let port = socket.port();
         // Validate IP version (fast path)
@@ -392,9 +392,10 @@ impl ScanEngine {
         
         let start_time = Instant::now();
         
-        // Balanced: 2 tries for accuracy without delays
-        let tries = 2;
-        for attempt in 1..=tries {
+        // Use config tries parameter, default to 1 for speed
+        let max_tries = self.config.max_retries.unwrap_or(1).max(1).min(3) as usize;
+        
+        for attempt in 1..=max_tries {
             match self.connect_optimized(socket).await {
                 Ok(_) => {
                     // Port is OPEN!
@@ -416,7 +417,7 @@ impl ScanEngine {
                     }
                     
                     // Last attempt - classify and return
-                    if attempt == tries {
+                    if attempt == max_tries {
                         let state = Self::classify_error(&e);
                         return Ok(PortResult {
                             port,
@@ -426,7 +427,7 @@ impl ScanEngine {
                             response_time: start_time.elapsed(),
                         });
                     }
-                    // Continue to next attempt (no delay for speed)
+                    // Continue to next attempt immediately (NO delay for maximum speed)
                 }
             }
         }
@@ -537,17 +538,14 @@ impl ScanEngine {
                 break;
             }
             
-            // If filtered, might need retry
+            // If filtered, might need retry (NO delay for speed)
             if state == PortState::Filtered && attempts < max_retries {
-                // Small delay before retry
-                tokio::time::sleep(Duration::from_millis(50)).await;
                 last_state = state;
                 continue;
             }
             
-            // If closed, retry once more to be sure (network flake)
+            // If closed, retry once more to be sure (NO delay for speed)
             if state == PortState::Closed && attempts < max_retries {
-                tokio::time::sleep(Duration::from_millis(30)).await;
                 last_state = state;
                 continue;
             }
@@ -632,13 +630,13 @@ impl ScanEngine {
             1.0
         };
         
-        // Adaptive batch size algorithm for reliable scanning
+        // Adaptive batch size algorithm for balanced performance
         let new_batch_size = if success_rate > 0.95 {
-            // High success rate, increase batch size but keep it moderate
-            std::cmp::min(current_batch + 200, 2000) // Moderate limits for accuracy
+            // High success rate, moderately increase batch size
+            std::cmp::min(current_batch + 200, 4000) // Conservative increase for stability
         } else if success_rate < 0.8 {
             // Low success rate, decrease batch size for reliability
-            std::cmp::max(current_batch.saturating_sub(200), 100)
+            std::cmp::max(current_batch.saturating_sub(200), 200)
         } else {
             current_batch
         };

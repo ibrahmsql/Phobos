@@ -372,11 +372,17 @@ pub struct NodeManager {
     nodes: Arc<Mutex<HashMap<Uuid, WorkerNode>>>,
 }
 
-impl NodeManager {
-    pub fn new() -> Self {
+impl Default for NodeManager {
+    fn default() -> Self {
         Self {
             nodes: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+}
+
+impl NodeManager {
+    pub fn new() -> Self {
+        Self::default()
     }
     
     pub async fn cleanup_disconnected_nodes(&self) {

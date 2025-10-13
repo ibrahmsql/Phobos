@@ -249,12 +249,18 @@ impl Default for RetryPolicy {
     }
 }
 
-impl ErrorHandler {
-    pub fn new() -> Self {
+impl Default for ErrorHandler {
+    fn default() -> Self {
         Self {
             fallback_service_info: Arc::new(RwLock::new(HashMap::new())),
             error_counts: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+}
+
+impl ErrorHandler {
+    pub fn new() -> Self {
+        Self::default()
     }
     
     pub async fn handle_service_detection_error(&self, port: u16, error: &NetworkIntelligenceError) {
@@ -446,7 +452,7 @@ impl IntelligenceEngine {
             }
         }
         
-        Err(last_error.unwrap_or_else(|| NetworkIntelligenceError::RecoveryFailed { attempts }))
+        Err(last_error.unwrap_or(NetworkIntelligenceError::RecoveryFailed { attempts }))
     }
     
     /// Execute scan with recovery mechanisms

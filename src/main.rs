@@ -464,7 +464,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("MS")
                 .help("Timeout in milliseconds")
                 .value_parser(clap::value_parser!(u64))
-                .default_value("3000"), // Reasonable timeout for reliable detection
+                .default_value("1000"), // Optimized: Fast 1s timeout for speed + accuracy
         )
         .arg(
             Arg::new("rate-limit")
@@ -591,7 +591,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .value_name("COUNT")
                 .help("Maximum number of retries for failed connections")
                 .value_parser(clap::value_parser!(u32))
-                .default_value("3"),
+                .default_value("2"), // Optimized: 2 retries = fast + no missed ports
         )
         .arg(
             Arg::new("scan-order")

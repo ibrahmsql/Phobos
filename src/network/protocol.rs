@@ -13,8 +13,8 @@ pub struct ServiceDatabase {
     udp_services: HashMap<u16, &'static str>,
 }
 
-impl ServiceDatabase {
-    pub fn new() -> Self {
+impl Default for ServiceDatabase {
+    fn default() -> Self {
         let mut tcp_services = HashMap::new();
         let mut udp_services = HashMap::new();
         
@@ -56,6 +56,12 @@ impl ServiceDatabase {
             tcp_services,
             udp_services,
         }
+    }
+}
+
+impl ServiceDatabase {
+    pub fn new() -> Self {
+        Self::default()
     }
     
     pub fn get_tcp_service(&self, port: u16) -> Option<&'static str> {
