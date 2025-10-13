@@ -120,12 +120,31 @@ cd phobos
 # Standard build (CPU-only, native optimization)
 cargo build --release
 
-# 🎮 GPU-Accelerated build (FASTEST!)
+# 🎮 GPU-Accelerated build with Make (FASTEST! Recommended)
 # Install OpenCL first: sudo apt install opencl-headers ocl-icd-opencl-dev
+make release    # Builds with GPU support automatically
+
+# Or manually with cargo
 cargo build --release --features gpu
 
-# Install globally
+# ═══════════════════════════════════════════════
+# Installation Options
+# ═══════════════════════════════════════════════
+
+# Option 1: Install with GPU support (Recommended)
+make install
+
+# Option 2: Install with cargo + GPU support
+cargo install --path . --features gpu
+
+# Option 3: Install without GPU (CPU-only)
 cargo install --path .
+
+# Option 4: Install from crates.io with GPU
+cargo install phobos --features gpu
+
+# Option 5: Install from crates.io without GPU
+cargo install phobos
 ```
 
 ### 🎮 GPU Acceleration (Optional but Awesome!)
@@ -138,13 +157,26 @@ sudo apt install nvidia-opencl-dev  # NVIDIA
 # OR
 sudo apt install amdgpu-pro          # AMD
 
-# Build with GPU
+# Build with GPU using Make (Recommended)
+make release    # Automatically enables GPU support
+
+# Or build with cargo manually
 cargo build --release --features gpu
+
+# Install with GPU support
+make install                              # Via Make (Recommended)
+cargo install --path . --features gpu     # Via Cargo
+cargo install phobos --features gpu       # From crates.io
 
 # Verify GPU detection
 ./target/release/phobos --version
 # Output: Phobos v1.1.1 (GPU: NVIDIA GeForce RTX 4090)
 ```
+
+> **📝 Important Notes:**
+> - `make build` / `make release` → **GPU dahil** (önerilen)
+> - `cargo build` / `cargo install` → **GPU yok** (varsayılan)
+> - GPU desteği için: `--features gpu` ekleyin veya `make` kullanın
 
 **Supported GPUs:** NVIDIA, AMD, Intel, Apple Silicon (M1/M2/M3)  
 **See:** [GPU Acceleration Guide](./GPU_ACCELERATION.md)

@@ -85,12 +85,16 @@ pub struct ScanEngine {
     config: ScanConfig,
     socket_pool: Option<SocketPool>,
     tcp_scanner: Option<TcpConnectScanner>,
+    #[allow(dead_code)]
     udp_scanner: Option<UdpScanner>,
+    #[allow(dead_code)]
     rate_limiter: Arc<Mutex<RateLimiter>>,
     service_db: ServiceDatabase,
+    #[allow(dead_code)]
     response_analyzer: ResponseAnalyzer,
     // Performance optimization fields
     adaptive_batch_size: Arc<AtomicU64>,
+    #[allow(dead_code)]
     connection_pool: Arc<Mutex<HashMap<SocketAddr, tokio::net::TcpStream>>>,
     performance_stats: Arc<Mutex<PerformanceStats>>,
 }
@@ -681,6 +685,7 @@ impl ScanEngine {
     }
     
     /// Clone engine for task execution
+    #[allow(dead_code)]
     fn clone_for_task(&self) -> Self {
         Self {
             config: self.config.clone(),

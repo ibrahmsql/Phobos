@@ -1,17 +1,19 @@
 # Phobos Port Scanner Makefile
 # This Makefile provides convenient commands for building, testing, and managing Phobos
 
-.PHONY: help build release test clean install uninstall fmt clippy bench audit run dev setup docs
+.PHONY: help build release build-nogpu release-nogpu test clean install uninstall fmt clippy bench audit run dev setup docs
 
 # Default target
 help:
 	@echo "🔥 Phobos Port Scanner - Makefile Commands"
 	@echo ""
 	@echo "📦 Build Commands:"
-	@echo "  make build     - Build debug version"
-	@echo "  make release   - Build optimized release version"
-	@echo "  make install   - Install Phobos globally"
-	@echo "  make uninstall - Uninstall Phobos"
+	@echo "  make build       - Build debug version (with GPU)"
+	@echo "  make release     - Build optimized release version (with GPU)"
+	@echo "  make build-nogpu - Build debug version (without GPU)"
+	@echo "  make release-nogpu - Build release version (without GPU)"
+	@echo "  make install     - Install Phobos globally (with GPU)"
+	@echo "  make uninstall   - Uninstall Phobos"
 	@echo ""
 	@echo "🧪 Testing Commands:"
 	@echo "  make test      - Run all tests"
@@ -43,21 +45,33 @@ help:
 
 # Build commands
 build:
-	@echo "🔨 Building Phobos (debug)..."
-	cargo build
-	@echo "✅ Build complete!"
+	@echo "🔨 Building Phobos (debug) with GPU acceleration..."
+	cargo build --features gpu
+	@echo "✅ Build complete with GPU support!"
 
 release:
-	@echo "🚀 Building Phobos (release)..."
+	@echo "🚀 Building Phobos (release) with GPU acceleration..."
+	cargo build --release --features gpu
+	@echo "✅ Release build complete with GPU support!"
+	@echo "📍 Binary location: ./target/release/phobos"
+
+# Build without GPU (for normal cargo-compatible builds)
+build-nogpu:
+	@echo "🔨 Building Phobos (debug) without GPU..."
+	cargo build
+	@echo "✅ Build complete without GPU!"
+
+release-nogpu:
+	@echo "🚀 Building Phobos (release) without GPU..."
 	cargo build --release
-	@echo "✅ Release build complete!"
+	@echo "✅ Release build complete without GPU!"
 	@echo "📍 Binary location: ./target/release/phobos"
 
 # Installation commands
 install: release
-	@echo "📦 Installing Phobos..."
-	cargo install --path .
-	@echo "✅ Phobos installed globally!"
+	@echo "📦 Installing Phobos with GPU support..."
+	cargo install --path . --features gpu
+	@echo "✅ Phobos installed globally with GPU support!"
 	@echo "💡 You can now run 'phobos' from anywhere"
 
 uninstall:

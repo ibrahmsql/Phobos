@@ -64,8 +64,10 @@ __kernel void filter_ports(
 
 /// GPU Accelerator using OpenCL with vendor-specific optimizations
 pub struct GpuAccelerator {
+    #[allow(dead_code)]
     context: Context,
     queue: Queue,
+    #[allow(dead_code)]
     device: Device,
     capabilities: GpuCapabilities,
     vendor_config: VendorConfig,
