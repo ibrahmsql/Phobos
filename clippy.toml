@@ -1,63 +1,7 @@
 # Clippy configuration for Phobos
-# Run: cargo clippy --all-targets --all-features -- -D warnings
-
-# Cognitive complexity threshold
 cognitive-complexity-threshold = 30
-
-# Type complexity threshold
 type-complexity-threshold = 500
-
-# Maximum struct field count before warning
-max-struct-bools = 3
-
-# Maximum function arguments
-max-fn-params-bools = 3
-
-# Single char lifetime names allowed
-single-char-binding-names-threshold = 4
-
-# Disallowed names (common placeholder names)
-disallowed-names = ["foo", "bar", "baz", "quux"]
-
-# Allowed identifiers
-allowed-idents-below-min-chars = ["tx", "rx", "io", "ip", "id", "ok", "db"]
-
-# Documentation requirements
-missing-docs-in-crate-items = false
-
-# Array size threshold for large_stack_arrays
-array-size-threshold = 512000
-
-# Literal representation
-literal-representation-threshold = 65536
-
-# Verbose bit mask threshold
-verbose-bit-mask-threshold = 1
-
-# Enum variant name threshold
-enum-variant-size-threshold = 200
-
-# Vec box size threshold  
-vec-box-size-threshold = 4096
-
-# Stack size threshold (bytes)
-stack-size-threshold = 512000
-
-# String lit as bytes threshold
-string-lit-as-bytes = 200
-
-# Semicolon inside block
-semicolon-inside-block-ignore-singleline = false
-semicolon-outside-block-ignore-multiline = false
-
-# Too many arguments
 too-many-arguments-threshold = 8
-
-# Too many lines
 too-many-lines-threshold = 200
-
-# Struct excessive bools
-max-struct-bool-fields = 3
-
-# Function cognitive complexity
-cognitive-complexity-threshold = 30
+array-size-threshold = 512000
+vec-box-size-threshold = 4096
