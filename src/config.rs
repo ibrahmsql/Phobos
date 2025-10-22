@@ -73,19 +73,19 @@ impl Default for ScanConfig {
             target: "127.0.0.1".to_string(),
             ports: (1..=1000).collect(),
             technique: ScanTechnique::Connect,
-            threads: 5000, // Ultra-high concurrency (default 5000)
-            timeout: 1500, // Fast timeout (1.5s)
-            rate_limit: 20_000_000, // 20M packets per second - Ultra-fast scanning
+            threads: 10000, // RustScan-level concurrency (10000 threads)
+            timeout: 10, // Ultra-fast timeout (10ms for localhost, auto-adjusts for remote)
+            rate_limit: 100_000_000, // 100M packets per second - RustScan speed
             stealth_options: None,
-            timing_template: 3, // Default timing template
+            timing_template: 5, // Insane timing by default (like RustScan)
             top_ports: None,
-            batch_size: None, // Auto-calculate if None
+            batch_size: Some(15000), // Maximum batch size for speed
             realtime_notifications: true, // Enable by default
             notification_color: "orange".to_string(), // Default orange color
             adaptive_learning: true, // Enable adaptive learning for performance optimization
-            min_response_time: 50, // 50ms minimum response time
-            max_response_time: 3000, // 3s maximum response time
-            max_retries: Some(2), // Default 2 retries for reliability
+            min_response_time: 1, // 1ms minimum response time (RustScan level)
+            max_response_time: 1000, // 1s maximum response time
+            max_retries: Some(1), // Only 1 retry for maximum speed
             source_port: None, // Auto-select source port
             interface: None, // Auto-select interface
             exclude_ips: None, // No exclusions by default
@@ -132,9 +132,21 @@ impl ScanConfig {
         self
     }
     
-    /// Get timeout as Duration
+    /// Get timeout as Duration with smart detection
     pub fn timeout_duration(&self) -> Duration {
-        Duration::from_millis(self.timeout)
+        // Auto-detect localhost and use ultra-fast timeout
+        let is_localhost = self.target == "localhost" 
+            || self.target == "127.0.0.1" 
+            || self.target == "::1"
+            || self.target.starts_with("127.")
+            || self.target.starts_with("localhost");
+        
+        if is_localhost && self.timeout > 20 {
+            // Force 10ms timeout for localhost (RustScan speed)
+            Duration::from_millis(10)
+        } else {
+            Duration::from_millis(self.timeout)
+        }
     }
     
     /// Calculate optimal batch size based on rate limit and threads

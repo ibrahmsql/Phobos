@@ -188,3 +188,6 @@ RustScan/
 
 # Build artifacts  
 .cargo/
+
+# GUI (work in progress)
+gui/

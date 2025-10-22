@@ -2,15 +2,32 @@
 name = "phobos"
 version = "1.1.1"
 edition = "2021"
-authors = ["ibrahimsql"]
-description = "Phobos: The Blazingly Fast Rust-Based Port Scanner That Outspeeds Nmap & Masscan"
+authors = ["ibrahimsql <ibrahimsql@proton.me>"]
+description = "Blazingly fast port scanner with GPU acceleration that outspeeds Nmap & Masscan"
 license = "MIT"
 repository = "https://github.com/ibrahmsql/phobos"
 homepage = "https://github.com/ibrahmsql/phobos"
-keywords = ["port-scanner", "network", "security", "rust", "nmap"]
+documentation = "https://docs.rs/phobos"
+keywords = ["port-scanner", "network", "security", "nmap", "masscan"]
 categories = ["network-programming", "command-line-utilities"]
 readme = "README.md"
-publish = ["github-packages"]
+rust-version = "1.70"
+include = [
+    "src/**/*",
+    "benches/**/*",
+    "examples/**/*",
+    "build.rs",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+]
+exclude = [
+    "assets/*",
+    ".github/*",
+    "target/*",
+    "*.sh",
+    "*.ps1",
+]
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }

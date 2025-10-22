@@ -1,0 +1,164 @@
+# Phobos Configuration File Example
+# Copy this file to ~/.config/phobos/config.toml or /etc/phobos/config.toml
+# All settings are optional - defaults will be used if not specified
+
+[scanning]
+# Default scanning parameters
+default_ports = "1-1000"              # Default port range if not specified
+default_technique = "connect"         # Default scan technique: connect, syn, udp
+max_threads = 100                     # Maximum concurrent threads
+timeout = "3s"                        # Connection timeout (e.g., "3s", "5000ms")
+batch_size = 3000                     # Batch size for port scanning
+rate_limit = 10000000                 # Rate limit in packets per second
+
+[timing]
+# Timing template settings (overridden by -T flag)
+template = 3                          # 0=paranoid, 1=sneaky, 2=polite, 3=normal, 4=aggressive, 5=insane
+max_retries = 3                       # Maximum connection retries
+scan_delay = "0ms"                    # Delay between probes
+initial_rtt_timeout = "1s"            # Initial RTT timeout
+
+[stealth]
+# Stealth scanning options
+enabled = false                       # Enable stealth features
+level = 2                             # Stealth level (0-5)
+randomize_order = true                # Randomize port scan order
+fragment_packets = false              # Enable packet fragmentation
+use_decoys = false                    # Use decoy IP addresses
+decoy_ips = []                        # List of decoy IPs (e.g., ["192.168.1.1", "192.168.1.2"])
+spoof_source = false                  # Spoof source IP (requires raw sockets)
+custom_source_port = 0                # Custom source port (0 = random)
+
+[output]
+# Output configuration
+default_format = "text"               # Default output format: text, json, xml, csv, nmap, greppable
+colored = true                        # Enable colored output
+verbose = false                       # Verbose output
+show_closed_ports = false             # Show closed ports (default: only open)
+show_filtered_ports = false           # Show filtered ports
+greppable = false                     # Greppable output format
+
+[output.files]
+# Output file settings
+auto_save = false                     # Automatically save results
+save_directory = "./scan_results"    # Directory for saved results
+filename_format = "scan_{target}_{timestamp}"  # Filename format
+formats = ["json", "text"]            # Formats to save automatically
+
+[network]
+# Network configuration
+interface = ""                        # Network interface to use (empty = auto)
+source_port = 0                       # Source port (0 = random)
+ttl = 64                              # IP TTL value
+fragment_offset = 0                   # IP fragment offset
+
+[gpu]
+# GPU acceleration settings (requires --features gpu)
+enabled = true                        # Enable GPU acceleration if available
+device_id = 0                         # GPU device ID (0 = first GPU)
+min_ports_for_gpu = 1000              # Minimum ports to use GPU
+batch_size = 10000                    # GPU batch size
+work_group_size = 256                 # OpenCL work group size
+
+[adaptive]
+# Adaptive scanning configuration
+enabled = false                       # Enable adaptive scanning
+learning_phase = "5s"                 # Learning phase duration
+adjustment_interval = "2s"            # How often to adjust parameters
+min_samples = 50                      # Minimum samples before adjustment
+target_type = "auto"                  # Target type: auto, enterprise, cloud, iot, residential
+
+[scripts]
+# Script execution configuration
+enabled = true                        # Enable script execution
+mode = "default"                      # Script mode: none, default, custom, all, adaptive
+script_dir = ""                       # Custom script directory (empty = builtin)
+timeout = "300s"                      # Script execution timeout
+max_concurrent = 10                   # Maximum concurrent script executions
+tags = []                             # Script tags to execute (empty = all)
+
+[nmap]
+# Nmap integration settings
+enabled = true                        # Run Nmap after port discovery
+auto_execute = true                   # Automatically execute Nmap on open ports
+default_args = "-sV -sC"              # Default Nmap arguments
+timeout = "600s"                      # Nmap execution timeout
+
+[profiles.stealth]
+# Stealth profile - ultra-quiet scanning
+technique = "syn"
+timing = 1
+threads = 1
+stealth.enabled = true
+stealth.level = 5
+stealth.randomize_order = true
+
+[profiles.aggressive]
+# Aggressive profile - maximum speed
+technique = "connect"
+timing = 5
+threads = 5000
+rate_limit = 100000000
+batch_size = 15000
+
+[profiles.comprehensive]
+# Comprehensive profile - thorough scanning
+ports = "1-65535"
+technique = "syn"
+timing = 4
+threads = 1000
+scripts.enabled = true
+scripts.mode = "all"
+
+[profiles.quick]
+# Quick profile - fast basic scan
+ports = "top1000"
+technique = "connect"
+timing = 4
+threads = 500
+
+[exclusions]
+# Exclusion lists
+exclude_ports = []                    # Ports to exclude (e.g., [25, 135, 445])
+exclude_ips = []                      # IPs/CIDR to exclude (e.g., ["192.168.1.1", "10.0.0.0/8"])
+
+[logging]
+# Logging configuration
+level = "info"                        # Log level: error, warn, info, debug, trace
+file = ""                             # Log file path (empty = no file logging)
+console = true                        # Enable console logging
+format = "human"                      # Log format: human, json
+
+[advanced]
+# Advanced settings (use with caution)
+socket_buffer_size = 262144           # Socket buffer size in bytes
+tcp_keepalive = true                  # Enable TCP keepalive
+tcp_nodelay = true                    # Disable Nagle's algorithm
+reuse_port = true                     # Enable SO_REUSEPORT
+parallel_dns_queries = 10             # Concurrent DNS queries
+dns_timeout = "5s"                    # DNS query timeout
+max_bandwidth_mbps = 0                # Max bandwidth in Mbps (0 = unlimited)
+
+[security]
+# Security settings
+require_permission_check = true       # Check for scan permission before starting
+validate_targets = true               # Validate target IP addresses
+block_private_ips = false             # Block scanning of private IP ranges
+audit_log = false                     # Enable audit logging
+audit_log_file = "/var/log/phobos/audit.log"  # Audit log file path
+
+# Example Usage:
+#
+# 1. Copy this file to ~/.config/phobos/config.toml
+# 2. Uncomment and modify settings as needed
+# 3. Run phobos normally - it will use these settings
+# 4. Command-line arguments override config file settings
+#
+# Validate configuration:
+#   phobos --validate-config
+#
+# Use specific config file:
+#   phobos -c /path/to/config.toml target.com
+#
+# Use predefined profile:
+#   phobos --profile stealth target.com

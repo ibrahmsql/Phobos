@@ -1,0 +1,88 @@
+# Rust formatting configuration for Phobos
+# Run: cargo fmt
+
+# Edition
+edition = "2021"
+
+# Maximum line width
+max_width = 100
+
+# Hard tabs or spaces
+hard_tabs = false
+tab_spaces = 4
+
+# Newline style
+newline_style = "Unix"
+
+# Import organization
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+imports_indent = "Block"
+imports_layout = "Mixed"
+
+# Function parameters and arguments
+fn_params_layout = "Tall"
+fn_call_width = 80
+
+# Chains and indentation
+chain_width = 80
+indent_style = "Block"
+use_small_heuristics = "Default"
+
+# Comments and documentation
+comment_width = 100
+wrap_comments = true
+format_code_in_doc_comments = true
+normalize_comments = true
+normalize_doc_attributes = true
+
+# Control flow
+control_brace_style = "AlwaysSameLine"
+brace_style = "SameLineWhere"
+
+# Match and conditionals
+match_block_trailing_comma = true
+match_arm_leading_pipes = "Never"
+force_multiline_blocks = false
+overflow_delimited_expr = true
+
+# Trailing commas
+trailing_comma = "Vertical"
+trailing_semicolon = true
+
+# Blank lines
+blank_lines_upper_bound = 2
+blank_lines_lower_bound = 0
+
+# Reordering
+reorder_imports = true
+reorder_modules = true
+reorder_impl_items = true
+
+# Spaces
+space_after_colon = true
+space_before_colon = false
+spaces_around_ranges = false
+
+# Strings
+format_strings = true
+format_macro_bodies = true
+format_macro_matchers = true
+
+# Structs and enums
+struct_field_align_threshold = 20
+enum_discrim_align_threshold = 20
+struct_lit_single_line = true
+
+# Miscellaneous
+remove_nested_parens = true
+use_field_init_shorthand = true
+use_try_shorthand = true
+force_explicit_abi = true
+condense_wildcard_suffixes = true
+color = "Auto"
+unstable_features = false
+
+# Edition 2021 features
+edition = "2021"
+version = "Two"

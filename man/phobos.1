@@ -1,0 +1,282 @@
+.TH PHOBOS 1 "October 2024" "Phobos 1.1.1" "User Commands"
+.SH NAME
+phobos \- blazingly fast Rust-based port scanner
+.SH SYNOPSIS
+.B phobos
+[\fIOPTIONS\fR] \fITARGET\fR
+.SH DESCRIPTION
+Phobos is a lightning-fast, modern port scanner built in Rust that outperforms Nmap and Masscan in speed and efficiency. It supports GPU acceleration, advanced stealth techniques, and adaptive scanning.
+.PP
+Phobos is designed for cybersecurity professionals, penetration testers, and network administrators who demand blazing-fast network reconnaissance with zero compromise on accuracy.
+.SH OPTIONS
+.SS "General Options"
+.TP
+.BR \-h ", " \-\-help
+Show help message and exit
+.TP
+.BR \-\-version
+Show version information
+.TP
+.BR \-v ", " \-\-verbose
+Enable verbose output
+.TP
+.BR \-\-no\-color
+Disable colored output
+.TP
+.BR \-\-no\-banner
+Hide the ASCII art banner
+.TP
+.BR \-\-benchmark
+Show detailed benchmark information
+.TP
+.BR \-\-accessible
+Accessible mode for screen readers
+.SS "Target Specification"
+.TP
+.I TARGET
+Target to scan (IP address, hostname, or CIDR notation)
+.br
+Examples: 192.168.1.1, scanme.nmap.org, 10.0.0.0/24
+.TP
+.BR \-i ", " \-\-input\-file " " \fIFILE\fR
+Read targets from file (supports TXT, CSV, JSON, Nmap XML)
+.TP
+.BR \-\-exclude\-ips " " \fIIPS\fR
+Comma-separated list of IPs/CIDR ranges to exclude
+.SS "Port Specification"
+.TP
+.BR \-p ", " \-\-ports " " \fIPORTS\fR
+Port range to scan (default: 1-1000)
+.br
+Examples: 80, 22,80,443, 1-1000, U:53,T:80
+.TP
+.BR \-x ", " \-\-exclude\-ports " " \fIPORTS\fR
+Comma-separated list of ports to exclude
+.TP
+.BR \-\-top
+Use top 1000 most common ports
+.TP
+.BR \-\-full\-range
+Scan all 65535 ports (1-65535)
+.SS "Scan Techniques"
+.TP
+.BR \-s ", " \-\-scan\-type " " \fITYPE\fR
+Scan technique (default: connect)
+.br
+Options: syn, connect, udp, fin, null, xmas, ack, window
+.TP
+.BR \-\-udp
+Enable UDP scanning mode
+.TP
+.BR \-O ", " \-\-os\-detect
+Enable advanced OS fingerprinting and detection
+.SS "Timing and Performance"
+.TP
+.BR \-T ", " \-\-timing " " \fILEVEL\fR
+Timing template (0-5, default: 3)
+.br
+0=paranoid, 1=sneaky, 2=polite, 3=normal, 4=aggressive, 5=insane
+.TP
+.BR \-\-threads " " \fICOUNT\fR
+Number of concurrent threads (default: 100)
+.TP
+.BR \-\-timeout " " \fIMS\fR
+Timeout in milliseconds (default: 3000)
+.TP
+.BR \-\-rate\-limit " " \fIPPS\fR
+Rate limit in packets per second (default: 10000000)
+.TP
+.BR \-b ", " \-\-batch\-size " " \fISIZE\fR
+Batch size for port scanning
+.TP
+.BR \-u ", " \-\-ulimit " " \fILIMIT\fR
+Automatically increase ulimit to specified value
+.SS "Stealth Options"
+.TP
+.BR \-\-stealth " " \fILEVEL\fR
+Stealth level (0-5, default: 2)
+.br
+0=none, 1=low, 2=medium, 3=high, 4=paranoid, 5=ghost
+.TP
+.BR \-\-shadow
+Shadow scanning: nearly invisible to detection systems
+.TP
+.BR \-\-wrath
+Wrath of Phobos: maximum aggression with evasion
+.TP
+.BR \-\-scan\-order " " \fIORDER\fR
+Order to scan ports (serial or random)
+.TP
+.BR \-D ", " \-\-decoys " " \fIIPS\fR
+Use decoy IP addresses
+.SS "Advanced Features"
+.TP
+.BR \-\-adaptive
+Enable adaptive scanning (adjusts based on network conditions)
+.TP
+.BR \-\-scripts " " \fIMODE\fR
+Script execution mode (none, default, custom, all, adaptive)
+.TP
+.BR \-\-script\-dir " " \fIDIR\fR
+Directory containing custom scripts
+.TP
+.BR \-\-script\-tags " " \fITAGS\fR
+Comma-separated list of script tags to execute
+.TP
+.BR \-\-script\-timeout " " \fISECONDS\fR
+Timeout for script execution (default: 300)
+.TP
+.BR \-\-source\-port " " \fIPORT\fR
+Use specific source port for scanning
+.TP
+.BR \-\-interface " " \fIIFACE\fR
+Network interface to use for scanning
+.SS "Output Options"
+.TP
+.BR \-o ", " \-\-output " " \fIFORMAT\fR
+Output format (text, json, xml, csv, nmap, greppable)
+.TP
+.BR \-\-output\-file " " \fIFILE\fR
+Write output to file
+.TP
+.BR \-\-output\-nmap " " \fIFILE\fR
+Save results in Nmap XML format
+.TP
+.BR \-g ", " \-\-greppable
+Greppable output (IP:PORT format only)
+.TP
+.BR \-\-all
+Show all port states (open, closed, filtered)
+.TP
+.BR \-\-ports\-only
+Only scan ports, don't run scripts or Nmap
+.TP
+.BR \-\-no\-nmap
+Disable automatic Nmap execution after port scan
+.SS "Configuration"
+.TP
+.BR \-c ", " \-\-config " " \fIFILE\fR
+Load configuration from file
+.TP
+.BR \-\-profile " " \fINAME\fR
+Use predefined scan profile (stealth, aggressive, comprehensive, quick)
+.TP
+.BR \-\-save\-profile " " \fINAME\fR
+Save current configuration as a profile
+.TP
+.BR \-\-list\-profiles
+List all available profiles
+.TP
+.BR \-\-validate\-config
+Validate configuration and exit
+.SS "System"
+.TP
+.BR \-\-system\-check
+Check system requirements and optimization recommendations
+.TP
+.BR \-\-update
+Update Phobos to the latest version from GitHub
+.SH EXAMPLES
+.SS "Basic Scanning"
+.TP
+Scan common ports on a single host:
+.B phobos scanme.nmap.org
+.TP
+Scan specific ports:
+.B phobos 192.168.1.1 \-p 22,80,443,8080
+.TP
+Scan port range:
+.B phobos 10.0.0.1 \-p 1-1000
+.TP
+Scan all ports:
+.B phobos target.com \-p 1-65535
+.SS "Advanced Scanning"
+.TP
+Stealth SYN scan with aggressive timing:
+.B phobos 192.168.1.1 \-s syn \-T 4
+.TP
+UDP scan:
+.B phobos target.com \-s udp \-T 4
+.TP
+Shadow scan (ultra-stealth):
+.B phobos target.com \-\-shadow
+.TP
+Wrath mode (maximum aggression):
+.B phobos target.com \-\-wrath \-p 1-65535
+.SS "Output Formats"
+.TP
+JSON output:
+.B phobos target.com \-o json \-\-output\-file results.json
+.TP
+Greppable output:
+.B phobos target.com \-g
+.TP
+Save to Nmap XML format:
+.B phobos target.com \-\-output\-nmap scan.xml
+.SS "GPU Acceleration"
+.TP
+Full port scan with GPU acceleration (requires \-\-features gpu):
+.B phobos target.com \-p 1-65535 \-T 5
+.SS "Adaptive Scanning"
+.TP
+Adaptive scan that adjusts to network conditions:
+.B phobos target.com \-\-adaptive \-p 1-65535
+.SS "Batch Scanning"
+.TP
+Scan multiple targets from file:
+.B phobos \-i targets.txt \-p 22,80,443
+.SH EXIT STATUS
+.TP
+.B 0
+Successful scan completion
+.TP
+.B 1
+Error during scan (invalid target, permission denied, etc.)
+.SH PERMISSIONS
+.TP
+.B TCP Connect Scan
+No special permissions required
+.TP
+.B SYN Stealth Scan
+Requires root privileges or CAP_NET_RAW capability
+.PP
+To grant capabilities without root:
+.br
+.B sudo setcap cap_net_raw+ep /usr/local/bin/phobos
+.SH CONFIGURATION FILES
+.TP
+.I ~/.config/phobos/config.toml
+User configuration file
+.TP
+.I /etc/phobos/config.toml
+System-wide configuration file
+.TP
+.I ./phobos.toml
+Local configuration file (current directory)
+.SH LEGAL NOTICE
+Phobos is a powerful network scanning tool. Users must:
+.PP
+.IP \(bu 2
+Only scan networks you own or have explicit permission to scan
+.IP \(bu 2
+Comply with all applicable local, state, and federal laws
+.IP \(bu 2
+Respect privacy and don't scan systems without permission
+.IP \(bu 2
+Understand the impact of your scans
+.PP
+Unauthorized network scanning may be illegal in your jurisdiction.
+.SH BUGS
+Report bugs at: https://github.com/ibrahmsql/phobos/issues
+.SH AUTHOR
+Written by ibrahimsql.
+.SH SEE ALSO
+.BR nmap (1),
+.BR masscan (1),
+.BR netcat (1)
+.PP
+Full documentation: https://github.com/ibrahmsql/phobos
+.br
+GPU Acceleration Guide: https://github.com/ibrahmsql/phobos/blob/main/GPU_ACCELERATION.md
+.SH COPYRIGHT
+Copyright \(co 2024 ibrahimsql. Licensed under the MIT License.

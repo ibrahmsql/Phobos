@@ -1,0 +1,72 @@
+# EditorConfig for Phobos
+# https://editorconfig.org
+
+root = true
+
+# Default settings for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Rust source files
+[*.rs]
+indent_size = 4
+max_line_length = 100
+
+# TOML configuration files
+[*.toml]
+indent_size = 2
+
+# JSON files
+[*.json]
+indent_size = 2
+
+# YAML files
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown files
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# Shell scripts
+[*.{sh,bash}]
+indent_size = 2
+
+# Python scripts
+[*.py]
+indent_size = 4
+
+# Makefiles
+[Makefile]
+indent_style = tab
+
+# JavaScript/TypeScript
+[*.{js,ts,jsx,tsx}]
+indent_size = 2
+
+# HTML/CSS
+[*.{html,css,scss}]
+indent_size = 2
+
+# XML
+[*.xml]
+indent_size = 2
+
+# Docker files
+[Dockerfile]
+indent_size = 2
+
+# Git config
+[.gitconfig]
+indent_style = tab
+
+# Ignore minified files
+[*.min.*]
+indent_style = ignore
+insert_final_newline = ignore

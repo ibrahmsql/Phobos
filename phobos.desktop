@@ -1,0 +1,29 @@
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Phobos Port Scanner
+GenericName=Network Port Scanner
+Comment=Blazingly fast Rust-based port scanner that outspeeds Nmap & Masscan
+Icon=phobos
+Exec=phobos-gui %U
+Terminal=false
+Categories=Network;Security;System;
+Keywords=port;scanner;network;security;nmap;pentesting;
+MimeType=text/plain;application/xml;application/json;
+StartupNotify=true
+X-GNOME-SingleWindow=true
+X-KDE-StartupNotify=true
+
+Actions=Scan;QuickScan;StealthScan;
+
+[Desktop Action Scan]
+Name=New Scan
+Exec=phobos-gui --new-scan
+
+[Desktop Action QuickScan]
+Name=Quick Scan
+Exec=phobos-gui --quick-scan
+
+[Desktop Action StealthScan]
+Name=Stealth Scan
+Exec=phobos-gui --stealth-scan
