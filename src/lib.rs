@@ -5,6 +5,8 @@
 pub mod adaptive;
 pub mod benchmark;
 pub mod config;
+pub mod core;        // New modular scanner traits
+pub mod engines;     // New execution engines
 pub mod error;
 pub mod gpu;
 pub mod intelligence;

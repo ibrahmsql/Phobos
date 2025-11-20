@@ -7,7 +7,7 @@ use crate::network::{
     PortResult, PortState, Protocol, ScanTechnique,
 };
 use crate::scanner::{create_batches, ScanBatch, ScanResult, ScanStats};
-use std::collections::HashMap;
+// REMOVED: unused HashMap import after connection_pool elimination
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -94,8 +94,7 @@ pub struct ScanEngine {
     response_analyzer: ResponseAnalyzer,
     // Performance optimization fields
     adaptive_batch_size: Arc<AtomicU64>,
-    #[allow(dead_code)]
-    connection_pool: Arc<Mutex<HashMap<SocketAddr, tokio::net::TcpStream>>>,
+    // REMOVED: connection_pool - eliminated lock contention overhead
     performance_stats: Arc<Mutex<PerformanceStats>>,
 }
 
@@ -122,7 +121,7 @@ impl Default for ScanEngine {
             service_db: ServiceDatabase::new(),
             response_analyzer: ResponseAnalyzer::new(ScanTechnique::Syn),
             adaptive_batch_size: Arc::new(AtomicU64::new(optimal_batch as u64)),
-            connection_pool: Arc::new(Mutex::new(HashMap::new())),
+            // REMOVED: connection_pool initialization
             performance_stats: Arc::new(Mutex::new(PerformanceStats::default())),
         }
     }
@@ -240,7 +239,7 @@ impl ScanEngine {
         // RustScan-style: Infer optimal batch size from system
         let initial_batch_size = Self::infer_optimal_batch_size(config.batch_size);
         let adaptive_batch_size = Arc::new(AtomicU64::new(initial_batch_size as u64));
-        let connection_pool = Arc::new(Mutex::new(HashMap::new()));
+        // REMOVED: connection_pool initialization - lock overhead eliminated
         let performance_stats = Arc::new(Mutex::new(PerformanceStats {
             optimal_batch_size: initial_batch_size as u16,
             last_optimization: Some(Instant::now()),
@@ -256,7 +255,7 @@ impl ScanEngine {
             service_db,
             response_analyzer,
             adaptive_batch_size,
-            connection_pool,
+            // REMOVED: connection_pool field
             performance_stats,
         })
     }
@@ -507,18 +506,17 @@ impl ScanEngine {
         Ok((results, stats))
     }
     
-    /// Ultra-fast port scanning with retry mechanism for reliability
+    /// Ultra-fast port scanning with immediate retry for maximum speed
+    /// Optimized: Removed retry delays for rustscan-level performance
     async fn scan_port_high_performance(&self, target: Ipv4Addr, port: u16) -> crate::Result<PortResult> {
         let start_time = Instant::now();
-        let max_retries = self.config.max_retries.unwrap_or(1).max(1);
+        // Fixed 2 retries for optimal balance between speed and accuracy
+        let max_retries = 2;
         
         let mut last_state = PortState::Closed;
-        let mut attempts = 0;
         
-        // Retry mechanism for reliability
-        while attempts < max_retries {
-            attempts += 1;
-            
+        // OPTIMIZED: Immediate retry without delays for maximum speed
+        for attempt in 1..=max_retries {
             let state = if let Some(ref tcp_scanner) = self.tcp_scanner {
                 // Use optimized TCP Connect scan
                 self.scan_tcp_high_performance(tcp_scanner, target, port).await?
@@ -531,43 +529,36 @@ impl ScanEngine {
                 ));
             };
             
-            // If port is open, return immediately (no need to retry)
+            // If port is open, return immediately (fast path)
             if state == PortState::Open {
-                last_state = state;
+                let response_time = start_time.elapsed();
+                return Ok(PortResult {
+                    port,
+                    protocol: Protocol::Tcp,
+                    state: PortState::Open,
+                    service: self.service_db.get_tcp_service(port).map(|s| s.to_string()),
+                    response_time,
+                });
+            }
+            
+            // OPTIMIZED: NO DELAYS - Immediate retry for speed
+            // Rustscan-style: Fast failure with accuracy from 2 tries
+            last_state = state;
+            
+            // Last attempt - return result
+            if attempt == max_retries {
                 break;
             }
-            
-            // If filtered, might need retry
-            if state == PortState::Filtered && attempts < max_retries {
-                // Small delay before retry
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                last_state = state;
-                continue;
-            }
-            
-            // If closed, retry once more to be sure (network flake)
-            if state == PortState::Closed && attempts < max_retries {
-                tokio::time::sleep(Duration::from_millis(30)).await;
-                last_state = state;
-                continue;
-            }
-            
-            last_state = state;
-            break;
+            // Continue to next attempt immediately (no sleep)
         }
         
+        // Return final state (closed or filtered)
         let response_time = start_time.elapsed();
-        let service = if last_state == PortState::Open {
-            self.service_db.get_tcp_service(port).map(|s| s.to_string())
-        } else {
-            None
-        };
-        
         Ok(PortResult {
             port,
             protocol: Protocol::Tcp,
             state: last_state,
-            service,
+            service: None,
             response_time,
         })
     }
@@ -696,7 +687,7 @@ impl ScanEngine {
             service_db: self.service_db.clone(),
             response_analyzer: self.response_analyzer.clone(),
             adaptive_batch_size: Arc::clone(&self.adaptive_batch_size),
-            connection_pool: Arc::clone(&self.connection_pool),
+            // REMOVED: connection_pool clone
             performance_stats: Arc::clone(&self.performance_stats),
         }
     }

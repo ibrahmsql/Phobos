@@ -1,0 +1,36 @@
+# Phobos Scripts Configuration
+# Format: TOML
+# Defines available post-scan scripts and their metadata
+
+[scripts.http_grabber]
+tags = ["core_approved", "http", "web"]
+ports = ["80", "443", "8080", "8000", "8443"]
+developer = ["Phobos Team", "https://github.com/ibrahmsql/phobos"]
+script_path = "fixtures/scripts/http_grabber.py"
+interpreter = "python3"
+description = "Grabs HTTP titles and server headers"
+timeout = 5
+
+[scripts.ssh_banner]
+tags = ["core_approved", "ssh", "banner"]
+ports = ["22", "2222"]
+developer = ["Phobos Team", "https://github.com/ibrahmsql/phobos"]
+script_path = "fixtures/scripts/ssh_banner.sh"
+interpreter = "bash"
+description = "Extracts SSH banner and version"
+timeout = 3
+
+[scripts.ssl_cert]
+tags = ["security", "ssl", "certificate"]
+ports = ["443", "8443", "465", "993", "995"]
+developer = ["Phobos Team"]
+script_path = "fixtures/scripts/ssl_cert_check.sh"
+interpreter = "bash"
+description = "Checks SSL certificate information"
+timeout = 5
+
+[config]
+default_timeout = 10
+max_concurrent_scripts = 10
+enable_by_default = true
+script_directory = "fixtures/scripts"

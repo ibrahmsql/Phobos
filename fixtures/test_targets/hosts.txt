@@ -1,0 +1,7 @@
+# Test targets for Phobos testing and validation
+127.0.0.1
+localhost
+scanme.nmap.org
+45.33.32.156
+example.com
+google.com
