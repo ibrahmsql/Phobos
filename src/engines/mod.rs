@@ -68,15 +68,17 @@ impl ScanEngine for StreamingEngine {
             
             // Create port iterator
             let mut port_iter = ports.iter().copied();
-            let mut futures = FuturesUnordered::new();
+            
+            // Use futures::stream::FuturesUnordered with boxed futures
+            let mut futures: FuturesUnordered<std::pin::Pin<Box<dyn std::future::Future<Output = Result<PortResult, ScanError>> + Send>>> = FuturesUnordered::new();
             
             // Fill initial batch
             for _ in 0..self.batch_size {
                 if let Some(port) = port_iter.next() {
                     let scanner_clone = Arc::clone(&scanner);
-                    futures.push(async move {
+                    futures.push(Box::pin(async move {
                         scanner_clone.scan_port(target, port).await
-                    });
+                    }));
                 }
             }
             
@@ -91,9 +93,9 @@ impl ScanEngine for StreamingEngine {
                 // Refill queue
                 if let Some(port) = port_iter.next() {
                     let scanner_clone = Arc::clone(&scanner);
-                    futures.push(async move {
+                    futures.push(Box::pin(async move {
                         scanner_clone.scan_port(target, port).await
-                    });
+                    }));
                 }
             }
             
