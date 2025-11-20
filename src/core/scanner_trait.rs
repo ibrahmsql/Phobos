@@ -86,11 +86,14 @@ pub trait PortScanner: Send + Sync {
         if caps.requires_root {
             #[cfg(unix)]
             {
-                if !nix::unistd::geteuid().is_root() {
-                    return Err(format!(
-                        "{} requires root privileges",
-                        self.name()
-                    ));
+                // Use libc instead of nix
+                unsafe {
+                    if libc::geteuid() != 0 {
+                        return Err(format!(
+                            "{} requires root privileges",
+                            self.name()
+                        ));
+                    }
                 }
             }
         }
@@ -204,12 +207,15 @@ impl ScannerFactory {
     pub fn create_best_scanner(timeout: Duration) -> Arc<dyn PortScanner> {
         #[cfg(unix)]
         {
-            if nix::unistd::geteuid().is_root() {
-                // Use SYN scanner if we have privileges
-                Arc::new(SynScanner::new(timeout))
-            } else {
-                // Fall back to TCP Connect
-                Arc::new(TcpConnectScanner::new(timeout))
+            // Use libc instead of nix
+            unsafe {
+                if libc::geteuid() == 0 {
+                    // Use SYN scanner if we have privileges
+                    Arc::new(SynScanner::new(timeout))
+                } else {
+                    // Fall back to TCP Connect
+                    Arc::new(TcpConnectScanner::new(timeout))
+                }
             }
         }
         
